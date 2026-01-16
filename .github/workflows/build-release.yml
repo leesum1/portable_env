@@ -142,21 +142,23 @@ jobs:
           echo "=== Files in dist/ ==="
           ls -lh dist/ || echo "dist directory does not exist!"
           
+          echo "=== Verifying package integrity ==="
           cd dist
           
-          echo "=== Verifying package integrity ==="
-          # Extract filename from checksum file and verify
-          sha256sum -c red_env_offline_x86_64.tar.gz.sha256 || {
-            # If verification fails due to path mismatch, try alternative method
-            expected_hash=$(awk '{print $1}' red_env_offline_x86_64.tar.gz.sha256)
-            actual_hash=$(sha256sum red_env_offline_x86_64.tar.gz | awk '{print $1}')
-            if [ "$expected_hash" = "$actual_hash" ]; then
-              echo "✓ Package integrity verified for x86_64!"
-            else
-              echo "✗ Hash mismatch!"
-              exit 1
-            fi
-          }
+          # Regenerate checksum file with correct relative path
+          expected_hash=$(awk '{print $1}' red_env_offline_x86_64.tar.gz.sha256)
+          actual_hash=$(sha256sum red_env_offline_x86_64.tar.gz | awk '{print $1}')
+          
+          if [ "$expected_hash" = "$actual_hash" ]; then
+            echo "✓ Package integrity verified for x86_64!"
+            echo "Expected: $expected_hash"
+            echo "Actual:   $actual_hash"
+          else
+            echo "✗ Hash mismatch!"
+            echo "Expected: $expected_hash"
+            echo "Actual:   $actual_hash"
+            exit 1
+          fi
 
       - name: Build verification image (x86_64)
         run: |
@@ -206,21 +208,23 @@ jobs:
           echo "=== Files in dist/ ==="
           ls -lh dist/ || echo "dist directory does not exist!"
           
+          echo "=== Verifying package integrity ==="
           cd dist
           
-          echo "=== Verifying package integrity ==="
-          # Extract filename from checksum file and verify
-          sha256sum -c red_env_offline_arm64.tar.gz.sha256 || {
-            # If verification fails due to path mismatch, try alternative method
-            expected_hash=$(awk '{print $1}' red_env_offline_arm64.tar.gz.sha256)
-            actual_hash=$(sha256sum red_env_offline_arm64.tar.gz | awk '{print $1}')
-            if [ "$expected_hash" = "$actual_hash" ]; then
-              echo "✓ Package integrity verified for ARM64!"
-            else
-              echo "✗ Hash mismatch!"
-              exit 1
-            fi
-          }
+          # Regenerate checksum file with correct relative path
+          expected_hash=$(awk '{print $1}' red_env_offline_arm64.tar.gz.sha256)
+          actual_hash=$(sha256sum red_env_offline_arm64.tar.gz | awk '{print $1}')
+          
+          if [ "$expected_hash" = "$actual_hash" ]; then
+            echo "✓ Package integrity verified for ARM64!"
+            echo "Expected: $expected_hash"
+            echo "Actual:   $actual_hash"
+          else
+            echo "✗ Hash mismatch!"
+            echo "Expected: $expected_hash"
+            echo "Actual:   $actual_hash"
+            exit 1
+          fi
 
       - name: Build verification image (ARM64)
         run: |
