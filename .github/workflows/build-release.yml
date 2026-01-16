@@ -2,15 +2,8 @@ name: Build and Release
 
 on:
   push:
-    branches:
-      - main
-      - master
     tags:
       - 'v*'
-  pull_request:
-    branches:
-      - main
-      - master
   workflow_dispatch:
 
 env:
@@ -265,13 +258,13 @@ jobs:
 
       - name: Prepare release files
         run: |
-          echo "=== Downloaded artifacts structure ===\"
+          echo "=== Downloaded artifacts structure ==="
           find release_artifacts -type f | head -20
           
           mkdir -p release_files
           find release_artifacts -type f \( -name "*.tar.gz" -o -name "*.sha256" \) -exec cp {} release_files/ \;
           
-          echo "=== Final release files ===\"
+          echo "=== Final release files ==="
           ls -lh release_files/
           
           if [ -z "$(ls -A release_files/)" ]; then
