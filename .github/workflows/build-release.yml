@@ -9,6 +9,9 @@ on:
 env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+permissions:
+  contents: write
+
 jobs:
   # x86_64 native build on ubuntu-latest (fast)
   build-x86_64:
