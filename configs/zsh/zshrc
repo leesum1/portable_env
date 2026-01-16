@@ -1,0 +1,196 @@
+# =============================================================================
+#                           Red Environment - Zsh 配置
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 静态 Zsh 函数路径 (FPATH) 配置
+# -----------------------------------------------------------------------------
+# 统一安装目录
+export RED_ENV_HOME="${HOME}/.red_env"
+
+# 确保静态编译的 zsh 能找到内置函数
+if [[ -d "${RED_ENV_HOME}/share/zsh" ]]; then
+  # 添加 zsh 5.8 的 functions 目录到 FPATH
+  ZSH_SHARE="${RED_ENV_HOME}/share/zsh/5.8"
+  if [[ -d "${ZSH_SHARE}/functions" ]]; then
+    FPATH="${ZSH_SHARE}/functions:${FPATH}"
+  fi
+fi
+
+# -----------------------------------------------------------------------------
+# Zimfw 初始化
+# -----------------------------------------------------------------------------
+ZIM_HOME="${RED_ENV_HOME}/zim"
+ZIM_CONFIG_FILE="${RED_ENV_HOME}/configs/zsh/zimrc"
+
+# 如果 zimfw 未安装，则初始化
+if [[ ! -e ${ZIM_HOME}/zimfw.zsh ]]; then
+  # 离线模式：从缓存复制
+  if [[ -d "${RED_ENV_HOME}/cache/zim" ]]; then
+    cp -r "${RED_ENV_HOME}/cache/zim" "${ZIM_HOME}"
+  fi
+fi
+
+# 初始化 zimfw 模块
+if [[ -s ${ZIM_HOME}/init.zsh ]]; then
+  source ${ZIM_HOME}/init.zsh
+fi
+
+# zimfw 命令函数
+zimfw() {
+  source "${ZIM_HOME}/zimfw.zsh" "$@"
+}
+
+# -----------------------------------------------------------------------------
+# 环境变量
+# -----------------------------------------------------------------------------
+export LANG=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+export EDITOR='vim'
+export VISUAL='vim'
+export PAGER='less'
+
+# 添加本地 bin 到 PATH
+export PATH="${RED_ENV_HOME}/bin:${RED_ENV_HOME}/vim/bin:${PATH}"
+
+# -----------------------------------------------------------------------------
+# csource 函数（独立文件）
+# -----------------------------------------------------------------------------
+if [[ -f "${RED_ENV_HOME}/configs/zsh/csource_func.zsh" ]]; then
+  source "${RED_ENV_HOME}/configs/zsh/csource_func.zsh"
+fi
+
+# -----------------------------------------------------------------------------
+# 历史记录配置
+# -----------------------------------------------------------------------------
+HISTFILE="${HOME}/.zsh_history"
+HISTSIZE=50000
+SAVEHIST=50000
+
+setopt EXTENDED_HISTORY          # 记录时间戳
+setopt HIST_EXPIRE_DUPS_FIRST    # 优先删除重复
+setopt HIST_IGNORE_DUPS          # 忽略连续重复
+setopt HIST_IGNORE_ALL_DUPS      # 忽略所有重复
+setopt HIST_IGNORE_SPACE         # 忽略空格开头的命令
+setopt HIST_FIND_NO_DUPS         # 搜索时不显示重复
+setopt HIST_SAVE_NO_DUPS         # 保存时不写入重复
+setopt SHARE_HISTORY             # 共享历史记录
+
+# -----------------------------------------------------------------------------
+# 目录导航
+# -----------------------------------------------------------------------------
+setopt AUTO_CD                   # 直接输入目录名进入
+setopt AUTO_PUSHD                # cd 时自动 pushd
+setopt PUSHD_IGNORE_DUPS         # pushd 忽略重复
+setopt PUSHD_SILENT              # pushd 静默
+
+# -----------------------------------------------------------------------------
+# 补全配置
+# -----------------------------------------------------------------------------
+setopt COMPLETE_IN_WORD          # 词中补全
+setopt ALWAYS_TO_END             # 补全后移到末尾
+setopt AUTO_MENU                 # 自动菜单补全
+setopt AUTO_LIST                 # 自动列出选项
+setopt AUTO_PARAM_SLASH          # 目录自动加 /
+
+zstyle ':completion:*' menu select
+zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}' # 大小写不敏感
+
+# -----------------------------------------------------------------------------
+# 键绑定
+# -----------------------------------------------------------------------------
+bindkey -e                       # Emacs 键绑定
+
+# 历史搜索
+bindkey '^[[A' history-substring-search-up
+bindkey '^[[B' history-substring-search-down
+bindkey '^P' history-substring-search-up
+bindkey '^N' history-substring-search-down
+
+# -----------------------------------------------------------------------------
+# 别名
+# -----------------------------------------------------------------------------
+# 现代化命令替代
+if command -v eza &> /dev/null; then
+    alias ls='eza --icons --group-directories-first'
+    alias ll='eza -la --icons --group-directories-first'
+    alias lt='eza --tree --icons --level=2'
+    alias la='eza -a --icons --group-directories-first'
+fi
+
+if command -v bat &> /dev/null; then
+    alias cat='bat --paging=never'
+    alias less='bat'
+fi
+
+if command -v rg &> /dev/null; then
+    alias grep='rg'
+fi
+
+if command -v fd &> /dev/null; then
+    alias find='fd'
+fi
+
+# 常用别名
+alias ..='cd ..'
+alias ...='cd ../..'
+alias ....='cd ../../..'
+alias ~='cd ~'
+
+alias md='mkdir -p'
+alias rd='rmdir'
+
+alias vi='vim'
+alias vim='vim'
+
+alias g='git'
+alias ga='git add'
+alias gc='git commit'
+alias gco='git checkout'
+alias gd='git diff'
+alias gl='git log --oneline --graph'
+alias gp='git push'
+alias gs='git status'
+
+alias ta='tmux attach -t'
+alias tl='tmux list-sessions'
+alias tn='tmux new-session -s'
+
+# -----------------------------------------------------------------------------
+# fzf 配置
+# -----------------------------------------------------------------------------
+FZF_HOME="${RED_ENV_HOME}/fzf"
+if [[ -f "${FZF_HOME}/shell/completion.zsh" ]]; then
+  source "${FZF_HOME}/shell/completion.zsh"
+fi
+if [[ -f "${FZF_HOME}/shell/key-bindings.zsh" ]]; then
+  source "${FZF_HOME}/shell/key-bindings.zsh"
+fi
+
+export FZF_DEFAULT_OPTS='
+    --height 40%
+    --layout=reverse
+    --border
+    --inline-info
+    --color=bg+:#363a4f,bg:#24273a,spinner:#f4dbd6,hl:#ed8796
+    --color=fg:#cad3f5,header:#ed8796,info:#c6a0f6,pointer:#f4dbd6
+    --color=marker:#f4dbd6,fg+:#cad3f5,prompt:#c6a0f6,hl+:#ed8796
+'
+
+if command -v fd &> /dev/null; then
+    export FZF_DEFAULT_COMMAND='fd --type f --hidden --follow --exclude .git'
+    export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
+    export FZF_ALT_C_COMMAND='fd --type d --hidden --follow --exclude .git'
+fi
+
+# -----------------------------------------------------------------------------
+# zoxide 智能目录跳转
+# -----------------------------------------------------------------------------
+if command -v zoxide &> /dev/null; then
+    eval "$(zoxide init zsh)"
+fi
+
+# -----------------------------------------------------------------------------
+# 用户自定义配置
+# -----------------------------------------------------------------------------
+[[ -f "${HOME}/.zshrc.local" ]] && source "${HOME}/.zshrc.local"

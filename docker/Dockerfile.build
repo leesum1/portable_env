@@ -1,0 +1,646 @@
+# =============================================================================
+#                   Red Environment - 构建环境 Dockerfile
+# =============================================================================
+# 用于下载和缓存所有软件，生成离线安装包
+# 支持多架构构建 (amd64/x86_64 和 arm64)
+# 
+# 使用方法:
+#   # x86_64 架构 (默认)
+#   docker build -f docker/Dockerfile.build -t red_env_builder:x86_64 .
+#
+#   # ARM64 架构
+#   docker build --platform linux/arm64 -f docker/Dockerfile.build -t red_env_builder:arm64 .
+#
+#   # 使用 PAT 解除 API 速率限制
+#   docker build --secret id=github_token,env=GITHUB_TOKEN -f docker/Dockerfile.build -t red_env_builder:x86_64 .
+# =============================================================================
+
+ARG BASE_IMAGE=red_env_build_base:x86_64
+FROM ${BASE_IMAGE}
+
+LABEL maintainer="Red Environment"
+LABEL description="Build environment for offline terminal setup"
+
+# 避免交互式安装
+ENV DEBIAN_FRONTEND=noninteractive
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+
+# 架构参数
+ARG TARGETARCH
+
+# GitHub Personal Access Token (可选，用于解除 API 速率限制)
+
+# -----------------------------------------------------------------------------
+# 创建工作目录
+# -----------------------------------------------------------------------------
+WORKDIR /build
+
+# 创建输出目录结构
+RUN mkdir -p /build/output/bin \
+    /build/output/cache/zim \
+    /build/output/configs \
+    /build/output/fonts \
+    /build/output/vim_runtime
+
+
+# -----------------------------------------------------------------------------
+# 下载 CLI 工具
+# -----------------------------------------------------------------------------
+
+# fzf
+RUN --mount=type=secret,id=github_token \
+    FZF_VERSION=$(/usr/local/bin/get_version junegunn/fzf | sed 's/v//') && \
+    echo "Downloading fzf version: ${FZF_VERSION}" && \
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+        curl -fsSL "https://github.com/junegunn/fzf/releases/download/v${FZF_VERSION}/fzf-${FZF_VERSION}-linux_arm64.tar.gz" | tar -xz -C /build/output/bin; \
+    else \
+        curl -fsSL "https://github.com/junegunn/fzf/releases/download/v${FZF_VERSION}/fzf-${FZF_VERSION}-linux_amd64.tar.gz" | tar -xz -C /build/output/bin; \
+    fi
+
+# bat (musl 静态编译)
+RUN --mount=type=secret,id=github_token \
+    BAT_VERSION=$(/usr/local/bin/get_version sharkdp/bat | sed 's/v//') && \
+    echo "Downloading bat version: ${BAT_VERSION}" && \
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+        curl -fsSL "https://github.com/sharkdp/bat/releases/download/v${BAT_VERSION}/bat-v${BAT_VERSION}-aarch64-unknown-linux-gnu.tar.gz" | tar -xz --strip-components=1 -C /build/output/bin --wildcards '*/bat'; \
+    else \
+        curl -fsSL "https://github.com/sharkdp/bat/releases/download/v${BAT_VERSION}/bat-v${BAT_VERSION}-x86_64-unknown-linux-musl.tar.gz" | tar -xz --strip-components=1 -C /build/output/bin --wildcards '*/bat'; \
+    fi
+
+# eza (ls 增强)
+RUN --mount=type=secret,id=github_token \
+    EZA_VERSION=$(/usr/local/bin/get_version eza-community/eza | sed 's/v//') && \
+    echo "Downloading eza version: ${EZA_VERSION}" && \
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+        curl -fsSL "https://github.com/eza-community/eza/releases/download/v${EZA_VERSION}/eza_aarch64-unknown-linux-gnu.tar.gz" | tar -xz -C /build/output/bin; \
+    else \
+        curl -fsSL "https://github.com/eza-community/eza/releases/download/v${EZA_VERSION}/eza_x86_64-unknown-linux-musl.tar.gz" | tar -xz -C /build/output/bin; \
+    fi
+
+# ripgrep (版本号无 v 前缀，x86_64 使用 musl)
+RUN --mount=type=secret,id=github_token \
+    RG_VERSION=$(/usr/local/bin/get_version BurntSushi/ripgrep) && \
+    echo "Downloading ripgrep version: ${RG_VERSION}" && \
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+        curl -fsSL "https://github.com/BurntSushi/ripgrep/releases/download/${RG_VERSION}/ripgrep-${RG_VERSION}-aarch64-unknown-linux-gnu.tar.gz" | tar -xz --strip-components=1 -C /build/output/bin --wildcards '*/rg'; \
+    else \
+        curl -fsSL "https://github.com/BurntSushi/ripgrep/releases/download/${RG_VERSION}/ripgrep-${RG_VERSION}-x86_64-unknown-linux-musl.tar.gz" | tar -xz --strip-components=1 -C /build/output/bin --wildcards '*/rg'; \
+    fi
+
+# fd (musl 静态编译)
+RUN --mount=type=secret,id=github_token \
+    FD_VERSION=$(/usr/local/bin/get_version sharkdp/fd | sed 's/v//') && \
+    echo "Downloading fd version: ${FD_VERSION}" && \
+    mkdir -p /tmp/fd && \
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+        curl -fsSL "https://github.com/sharkdp/fd/releases/download/v${FD_VERSION}/fd-v${FD_VERSION}-aarch64-unknown-linux-musl.tar.gz" | tar -xz -C /tmp/fd --strip-components=1 && \
+        cp /tmp/fd/fd /build/output/bin/; \
+    else \
+        curl -fsSL "https://github.com/sharkdp/fd/releases/download/v${FD_VERSION}/fd-v${FD_VERSION}-x86_64-unknown-linux-musl.tar.gz" | tar -xz -C /tmp/fd --strip-components=1 && \
+        cp /tmp/fd/fd /build/output/bin/; \
+    fi && rm -rf /tmp/fd
+
+# delta (git diff 增强, musl 静态编译，版本号无 v 前缀)
+RUN --mount=type=secret,id=github_token \
+    DELTA_VERSION=$(/usr/local/bin/get_version dandavison/delta) && \
+    echo "Downloading delta version: ${DELTA_VERSION}" && \
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+        curl -fsSL "https://github.com/dandavison/delta/releases/download/${DELTA_VERSION}/delta-${DELTA_VERSION}-aarch64-unknown-linux-gnu.tar.gz" | tar -xz --strip-components=1 -C /build/output/bin --wildcards '*/delta'; \
+    else \
+        curl -fsSL "https://github.com/dandavison/delta/releases/download/${DELTA_VERSION}/delta-${DELTA_VERSION}-x86_64-unknown-linux-musl.tar.gz" | tar -xz --strip-components=1 -C /build/output/bin --wildcards '*/delta'; \
+    fi
+
+# lazygit
+RUN --mount=type=secret,id=github_token \
+    LAZYGIT_VERSION=$(/usr/local/bin/get_version jesseduffield/lazygit | sed 's/v//') && \
+    echo "Downloading lazygit version: ${LAZYGIT_VERSION}" && \
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+        curl -fsSL "https://github.com/jesseduffield/lazygit/releases/download/v${LAZYGIT_VERSION}/lazygit_${LAZYGIT_VERSION}_Linux_arm64.tar.gz" | tar -xz -C /build/output/bin lazygit; \
+    else \
+        curl -fsSL "https://github.com/jesseduffield/lazygit/releases/download/v${LAZYGIT_VERSION}/lazygit_${LAZYGIT_VERSION}_Linux_x86_64.tar.gz" | tar -xz -C /build/output/bin lazygit; \
+    fi
+
+# lazysql
+RUN --mount=type=secret,id=github_token \
+    LAZYSQL_VERSION=$(/usr/local/bin/get_version jorgerojas26/lazysql | sed 's/^v//') && \
+    echo "Downloading lazysql version: ${LAZYSQL_VERSION}" && \
+    mkdir -p /tmp/lazysql && \
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+        curl -fsSL "https://github.com/jorgerojas26/lazysql/releases/download/v${LAZYSQL_VERSION}/lazysql_Linux_arm64.tar.gz" | tar -xz -C /tmp/lazysql; \
+    else \
+        curl -fsSL "https://github.com/jorgerojas26/lazysql/releases/download/v${LAZYSQL_VERSION}/lazysql_Linux_x86_64.tar.gz" | tar -xz -C /tmp/lazysql; \
+    fi && \
+    cp /tmp/lazysql/lazysql /build/output/bin/ && \
+    rm -rf /tmp/lazysql
+
+# aichat
+RUN --mount=type=secret,id=github_token \
+    AICHAT_VERSION=$(/usr/local/bin/get_version sigoden/aichat) && \
+    echo "Downloading aichat version: ${AICHAT_VERSION}" && \
+    mkdir -p /tmp/aichat && \
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+        curl -fsSL "https://github.com/sigoden/aichat/releases/download/${AICHAT_VERSION}/aichat-${AICHAT_VERSION}-aarch64-unknown-linux-musl.tar.gz" | tar -xz -C /tmp/aichat; \
+    else \
+        curl -fsSL "https://github.com/sigoden/aichat/releases/download/${AICHAT_VERSION}/aichat-${AICHAT_VERSION}-x86_64-unknown-linux-musl.tar.gz" | tar -xz -C /tmp/aichat; \
+    fi && \
+    cp /tmp/aichat/aichat /build/output/bin/ && \
+    rm -rf /tmp/aichat
+
+# tuios
+RUN --mount=type=secret,id=github_token \
+    TUIOS_VERSION=$(/usr/local/bin/get_version Gaurav-Gosain/tuios | sed 's/^v//') && \
+    echo "Downloading tuios version: ${TUIOS_VERSION}" && \
+    mkdir -p /tmp/tuios && \
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+        curl -fsSL "https://github.com/Gaurav-Gosain/tuios/releases/download/v${TUIOS_VERSION}/tuios_${TUIOS_VERSION}_Linux_arm64.tar.gz" | tar -xz -C /tmp/tuios; \
+    else \
+        curl -fsSL "https://github.com/Gaurav-Gosain/tuios/releases/download/v${TUIOS_VERSION}/tuios_${TUIOS_VERSION}_Linux_x86_64.tar.gz" | tar -xz -C /tmp/tuios; \
+    fi && \
+    cp /tmp/tuios/tuios /build/output/bin/ && \
+    rm -rf /tmp/tuios
+
+# Vim (静态编译)
+RUN --mount=type=secret,id=github_token \
+    VIM_VERSION=$(/usr/local/bin/get_version vim/vim | sed 's/v//') && \
+    echo "Building vim version: ${VIM_VERSION}" && \
+    git clone --depth 1 --branch "v${VIM_VERSION}" https://github.com/vim/vim.git /tmp/vim && \
+    cd /tmp/vim && \
+    CFLAGS="-O2" LDFLAGS='-Wl,-rpath,$$ORIGIN/../lib' ./configure \
+        --with-features=huge \
+        --enable-multibyte \
+        --enable-gui=gtk3 \
+        --with-x \
+        --enable-xim \
+        --enable-fontset \
+        --enable-terminal \
+        --enable-cscope \
+        --enable-largefile \
+        --enable-fail-if-missing \
+        --enable-perlinterp=no \
+        --enable-pythoninterp=no \
+        --enable-python3interp=no \
+        --enable-rubyinterp=no \
+        --enable-luainterp=no \
+        --enable-tclinterp=no \
+        --enable-mzschemeinterp=no \
+        --enable-netbeans=no \
+        --enable-channel=no \
+        --enable-gpm=no \
+        --enable-acl=no \
+        --enable-selinux=no \
+        --enable-xsmp=no \
+        --enable-nls=no \
+        --prefix=/build/output/vim \
+        --with-tlib=ncurses && \
+    make -j"$(nproc)" && \
+    make install STRIP=/bin/true && \
+    VIM_PREFIX=/build/output/vim && \
+    mkdir -p "${VIM_PREFIX}/lib" && \
+    DEP_FILE="$(mktemp)" && TMP_FILE="${DEP_FILE}.tmp" && \
+    : > "${DEP_FILE}" && \
+    for binary in "${VIM_PREFIX}/bin/vim" "${VIM_PREFIX}/bin/gvim"; do \
+        if [ -x "$binary" ]; then \
+            ldd "$binary" > "${TMP_FILE}" && \
+            if grep -q "not found" "${TMP_FILE}"; then \
+                cat "${TMP_FILE}" >&2 && \
+                echo "Missing shared libraries for $binary" >&2 && \
+                exit 1; \
+            fi && \
+            awk '/=>/ { if ($3 ~ /^\//) print $3 } /^[[:space:]]*\// { if ($1 ~ /^\//) print $1 }' "${TMP_FILE}" >> "${DEP_FILE}"; \
+        fi; \
+    done && \
+    sort -u "${DEP_FILE}" | while read -r lib; do \
+        case "$lib" in \
+            "") continue ;; \
+            */ld-linux*.so.*) continue ;; \
+            */libc.so.*) continue ;; \
+            */libm.so.*) continue ;; \
+            */libpthread.so.*) continue ;; \
+            */librt.so.*) continue ;; \
+            */libdl.so.*) continue ;; \
+            */libutil.so.*) continue ;; \
+            */libgcc_s.so.*) continue ;; \
+        esac; \
+        cp -u "$lib" "${VIM_PREFIX}/lib/"; \
+    done && \
+    for binary in "${VIM_PREFIX}/bin/vim" "${VIM_PREFIX}/bin/gvim"; do \
+        if [ -x "$binary" ]; then \
+            mv "$binary" "${binary}.real" && \
+            printf '%s\n' \
+                '#!/usr/bin/env bash' \
+                'INVOKED_NAME="$(basename "$0")"' \
+                'SCRIPT_PATH="$(readlink -f "$0")"' \
+                'BIN_DIR="$(dirname "$SCRIPT_PATH")"' \
+                'REAL_NAME="$(basename "$SCRIPT_PATH")"' \
+                'LIB_DIR="${BIN_DIR}/../lib"' \
+                'RUNTIME_DIR="$(ls -d "${BIN_DIR}/../share/vim"/vim* 2>/dev/null | head -n 1)"' \
+                'if [ -n "$RUNTIME_DIR" ]; then' \
+                '  export VIMRUNTIME="$RUNTIME_DIR"' \
+                'fi' \
+                'export LD_LIBRARY_PATH="${LIB_DIR}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"' \
+                'exec -a "$INVOKED_NAME" "${BIN_DIR}/${REAL_NAME}.real" "$@"' \
+                > "$binary" && \
+            chmod +x "$binary"; \
+        fi; \
+    done && \
+    rm -f "${DEP_FILE}" "${TMP_FILE}" && \
+    rm -rf /tmp/vim
+
+# amix/vimrc (The Ultimate vimrc - awesome version)
+RUN git clone --depth 1 https://github.com/amix/vimrc.git /build/output/vim_runtime && \
+    rm -rf /build/output/vim_runtime/.git && \
+    rm -rf /build/output/vim_runtime/sources_non_forked/copilot.vim && \
+    chmod +x /build/output/vim_runtime/install_awesome_vimrc.sh \
+        /build/output/vim_runtime/install_basic_vimrc.sh \
+        /build/output/vim_runtime/install_awesome_parameterized.sh
+
+# zoxide
+RUN --mount=type=secret,id=github_token \
+    ZOXIDE_VERSION=$(/usr/local/bin/get_version ajeetdsouza/zoxide | sed 's/v//') && \
+    echo "Downloading zoxide version: ${ZOXIDE_VERSION}" && \
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+        curl -fsSL "https://github.com/ajeetdsouza/zoxide/releases/download/v${ZOXIDE_VERSION}/zoxide-${ZOXIDE_VERSION}-aarch64-unknown-linux-musl.tar.gz" | tar -xz -C /build/output/bin zoxide; \
+    else \
+        curl -fsSL "https://github.com/ajeetdsouza/zoxide/releases/download/v${ZOXIDE_VERSION}/zoxide-${ZOXIDE_VERSION}-x86_64-unknown-linux-musl.tar.gz" | tar -xz -C /build/output/bin zoxide; \
+    fi
+
+# dust (du 的现代替代, 磁盘使用分析)
+RUN --mount=type=secret,id=github_token \
+    DUST_VERSION=$(/usr/local/bin/get_version bootandy/dust | sed 's/v//') && \
+    echo "Downloading dust version: ${DUST_VERSION}" && \
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+        curl -fsSL "https://github.com/bootandy/dust/releases/download/v${DUST_VERSION}/dust-v${DUST_VERSION}-aarch64-unknown-linux-musl.tar.gz" | tar -xz --strip-components=1 -C /build/output/bin --wildcards '*/dust'; \
+    else \
+        curl -fsSL "https://github.com/bootandy/dust/releases/download/v${DUST_VERSION}/dust-v${DUST_VERSION}-x86_64-unknown-linux-musl.tar.gz" | tar -xz --strip-components=1 -C /build/output/bin --wildcards '*/dust'; \
+    fi
+
+# bottom (btm, 系统监控工具, top/htop 的现代替代)
+RUN --mount=type=secret,id=github_token \
+    BTM_VERSION=$(/usr/local/bin/get_version ClementTsang/bottom) && \
+    echo "Downloading bottom version: ${BTM_VERSION}" && \
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+        curl -fsSL "https://github.com/ClementTsang/bottom/releases/download/${BTM_VERSION}/bottom_aarch64-unknown-linux-musl.tar.gz" | tar -xz -C /build/output/bin btm; \
+    else \
+        curl -fsSL "https://github.com/ClementTsang/bottom/releases/download/${BTM_VERSION}/bottom_x86_64-unknown-linux-musl.tar.gz" | tar -xz -C /build/output/bin btm; \
+    fi
+
+# procs (ps 的现代替代, 进程查看)
+RUN --mount=type=secret,id=github_token \
+    PROCS_VERSION=$(/usr/local/bin/get_version dalance/procs | sed 's/v//') && \
+    echo "Downloading procs version: ${PROCS_VERSION}" && \
+    mkdir -p /tmp/procs && \
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+        curl -fsSL "https://github.com/dalance/procs/releases/download/v${PROCS_VERSION}/procs-v${PROCS_VERSION}-aarch64-linux.zip" -o /tmp/procs/procs.zip && \
+        unzip -q /tmp/procs/procs.zip -d /tmp/procs && \
+        cp /tmp/procs/procs /build/output/bin/; \
+    else \
+        curl -fsSL "https://github.com/dalance/procs/releases/download/v${PROCS_VERSION}/procs-v${PROCS_VERSION}-x86_64-linux.zip" -o /tmp/procs/procs.zip && \
+        unzip -q /tmp/procs/procs.zip -d /tmp/procs && \
+        cp /tmp/procs/procs /build/output/bin/; \
+    fi && rm -rf /tmp/procs
+
+# sd (sed 的现代替代, 搜索替换)
+RUN --mount=type=secret,id=github_token \
+    SD_VERSION=$(/usr/local/bin/get_version chmln/sd | sed 's/v//') && \
+    echo "Downloading sd version: ${SD_VERSION}" && \
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+        curl -fsSL "https://github.com/chmln/sd/releases/download/v${SD_VERSION}/sd-v${SD_VERSION}-aarch64-unknown-linux-musl.tar.gz" | tar -xz --strip-components=1 -C /build/output/bin --wildcards '*/sd'; \
+    else \
+        curl -fsSL "https://github.com/chmln/sd/releases/download/v${SD_VERSION}/sd-v${SD_VERSION}-x86_64-unknown-linux-musl.tar.gz" | tar -xz --strip-components=1 -C /build/output/bin --wildcards '*/sd'; \
+    fi
+RUN --mount=type=secret,id=github_token \
+    HYPERFINE_VERSION=$(/usr/local/bin/get_version sharkdp/hyperfine | sed 's/v//') && \
+    echo "Downloading hyperfine version: ${HYPERFINE_VERSION}" && \
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+        curl -fsSL "https://github.com/sharkdp/hyperfine/releases/download/v${HYPERFINE_VERSION}/hyperfine-v${HYPERFINE_VERSION}-aarch64-unknown-linux-gnu.tar.gz" | tar -xz --strip-components=1 -C /build/output/bin --wildcards '*/hyperfine'; \
+    else \
+        curl -fsSL "https://github.com/sharkdp/hyperfine/releases/download/v${HYPERFINE_VERSION}/hyperfine-v${HYPERFINE_VERSION}-x86_64-unknown-linux-musl.tar.gz" | tar -xz --strip-components=1 -C /build/output/bin --wildcards '*/hyperfine'; \
+    fi
+
+# tokei (代码统计工具, 使用 v13.0.0-alpha.0 因为最新版无预编译二进制)
+RUN TOKEI_VERSION="13.0.0-alpha.0" && \
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+        curl -fsSL "https://github.com/XAMPPRocky/tokei/releases/download/v${TOKEI_VERSION}/tokei-aarch64-unknown-linux-gnu.tar.gz" | tar -xz -C /build/output/bin tokei; \
+    else \
+        curl -fsSL "https://github.com/XAMPPRocky/tokei/releases/download/v${TOKEI_VERSION}/tokei-x86_64-unknown-linux-musl.tar.gz" | tar -xz -C /build/output/bin tokei; \
+    fi
+
+
+# duf (df 的现代替代, 磁盘空间查看)
+RUN --mount=type=secret,id=github_token \
+    DUF_VERSION=$(/usr/local/bin/get_version muesli/duf | sed 's/v//') && \
+    echo "Downloading duf version: ${DUF_VERSION}" && \
+    mkdir -p /tmp/duf && \
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+        curl -fsSL "https://github.com/muesli/duf/releases/download/v${DUF_VERSION}/duf_${DUF_VERSION}_linux_arm64.tar.gz" | tar -xz -C /tmp/duf && \
+        cp /tmp/duf/duf /build/output/bin/; \
+    else \
+        curl -fsSL "https://github.com/muesli/duf/releases/download/v${DUF_VERSION}/duf_${DUF_VERSION}_linux_x86_64.tar.gz" | tar -xz -C /tmp/duf && \
+        cp /tmp/duf/duf /build/output/bin/; \
+    fi && rm -rf /tmp/duf
+
+# jq (JSON 处理工具)
+RUN --mount=type=secret,id=github_token \
+    JQ_VERSION=$(/usr/local/bin/get_version jqlang/jq | sed 's/jq-//') && \
+    echo "Downloading jq version: ${JQ_VERSION}" && \
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+        curl -fsSL "https://github.com/jqlang/jq/releases/download/jq-${JQ_VERSION}/jq-linux-arm64" -o /build/output/bin/jq; \
+    else \
+        curl -fsSL "https://github.com/jqlang/jq/releases/download/jq-${JQ_VERSION}/jq-linux-amd64" -o /build/output/bin/jq; \
+    fi && chmod +x /build/output/bin/jq
+
+# yq (YAML 处理工具)
+RUN --mount=type=secret,id=github_token \
+    YQ_VERSION=$(/usr/local/bin/get_version mikefarah/yq | sed 's/v//') && \
+    echo "Downloading yq version: ${YQ_VERSION}" && \
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+        curl -fsSL "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_arm64" -o /build/output/bin/yq; \
+    else \
+        curl -fsSL "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64" -o /build/output/bin/yq; \
+    fi && chmod +x /build/output/bin/yq
+
+# glow (终端 Markdown 渲染)
+RUN --mount=type=secret,id=github_token \
+    GLOW_VERSION=$(/usr/local/bin/get_version charmbracelet/glow | sed 's/v//') && \
+    echo "Downloading glow version: ${GLOW_VERSION}" && \
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+        curl -fsSL "https://github.com/charmbracelet/glow/releases/download/v${GLOW_VERSION}/glow_${GLOW_VERSION}_Linux_arm64.tar.gz" | tar -xz --strip-components=1 -C /build/output/bin --wildcards '*/glow'; \
+    else \
+        curl -fsSL "https://github.com/charmbracelet/glow/releases/download/v${GLOW_VERSION}/glow_${GLOW_VERSION}_Linux_x86_64.tar.gz" | tar -xz --strip-components=1 -C /build/output/bin --wildcards '*/glow'; \
+    fi
+
+# yazi (终端文件管理器, 非常快)
+RUN --mount=type=secret,id=github_token \
+    YAZI_VERSION=$(/usr/local/bin/get_version sxyazi/yazi | sed 's/v//') && \
+    echo "Downloading yazi version: ${YAZI_VERSION}" && \
+    mkdir -p /tmp/yazi && \
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+        curl -fsSL "https://github.com/sxyazi/yazi/releases/download/v${YAZI_VERSION}/yazi-aarch64-unknown-linux-musl.zip" -o /tmp/yazi/yazi.zip; \
+    else \
+        curl -fsSL "https://github.com/sxyazi/yazi/releases/download/v${YAZI_VERSION}/yazi-x86_64-unknown-linux-musl.zip" -o /tmp/yazi/yazi.zip; \
+    fi && \
+    unzip -q /tmp/yazi/yazi.zip -d /tmp/yazi && \
+    cp /tmp/yazi/yazi-*/yazi /tmp/yazi/yazi-*/ya /build/output/bin/ && \
+    rm -rf /tmp/yazi
+
+# zellij (终端复用器, 现代 tmux 替代)
+RUN --mount=type=secret,id=github_token \
+    ZELLIJ_VERSION=$(/usr/local/bin/get_version zellij-org/zellij | sed 's/v//') && \
+    echo "Downloading zellij version: ${ZELLIJ_VERSION}" && \
+    mkdir -p /tmp/zellij && \
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+        curl -fsSL "https://github.com/zellij-org/zellij/releases/download/v${ZELLIJ_VERSION}/zellij-aarch64-unknown-linux-musl.tar.gz" | tar -xz -C /tmp/zellij; \
+    else \
+        curl -fsSL "https://github.com/zellij-org/zellij/releases/download/v${ZELLIJ_VERSION}/zellij-x86_64-unknown-linux-musl.tar.gz" | tar -xz -C /tmp/zellij; \
+    fi && \
+    cp /tmp/zellij/zellij /build/output/bin/ && \
+    rm -rf /tmp/zellij
+
+# atuin (Shell 历史搜索和同步)
+RUN --mount=type=secret,id=github_token \
+    ATUIN_VERSION=$(/usr/local/bin/get_version atuinsh/atuin | sed 's/v//') && \
+    echo "Downloading atuin version: ${ATUIN_VERSION}" && \
+    mkdir -p /tmp/atuin && \
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+        curl -fsSL "https://github.com/atuinsh/atuin/releases/download/v${ATUIN_VERSION}/atuin-aarch64-unknown-linux-musl.tar.gz" | tar -xz -C /tmp/atuin --strip-components=1; \
+    else \
+        curl -fsSL "https://github.com/atuinsh/atuin/releases/download/v${ATUIN_VERSION}/atuin-x86_64-unknown-linux-musl.tar.gz" | tar -xz -C /tmp/atuin --strip-components=1; \
+    fi && \
+    cp /tmp/atuin/atuin /build/output/bin/ && \
+    rm -rf /tmp/atuin
+
+# navi (交互式命令 cheatsheet)
+RUN --mount=type=secret,id=github_token \
+    NAVI_VERSION=$(/usr/local/bin/get_version denisidoro/navi | sed 's/v//') && \
+    echo "Downloading navi version: ${NAVI_VERSION}" && \
+    mkdir -p /tmp/navi && \
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+        curl -fsSL "https://github.com/denisidoro/navi/releases/download/v${NAVI_VERSION}/navi-v${NAVI_VERSION}-aarch64-unknown-linux-gnu.tar.gz" | tar -xz -C /tmp/navi; \
+    else \
+        curl -fsSL "https://github.com/denisidoro/navi/releases/download/v${NAVI_VERSION}/navi-v${NAVI_VERSION}-x86_64-unknown-linux-musl.tar.gz" | tar -xz -C /tmp/navi; \
+    fi && \
+    cp /tmp/navi/navi /build/output/bin/ && \
+    rm -rf /tmp/navi
+
+# ouch (通用解压缩工具)
+RUN --mount=type=secret,id=github_token \
+    OUCH_VERSION=$(/usr/local/bin/get_version ouch-org/ouch) && \
+    echo "Downloading ouch version: ${OUCH_VERSION}" && \
+    mkdir -p /tmp/ouch && \
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+        curl -fsSL "https://github.com/ouch-org/ouch/releases/download/${OUCH_VERSION}/ouch-aarch64-unknown-linux-musl.tar.gz" | tar -xz -C /tmp/ouch --strip-components=1; \
+    else \
+        curl -fsSL "https://github.com/ouch-org/ouch/releases/download/${OUCH_VERSION}/ouch-x86_64-unknown-linux-musl.tar.gz" | tar -xz -C /tmp/ouch --strip-components=1; \
+    fi && \
+    cp /tmp/ouch/ouch /build/output/bin/ && \
+    rm -rf /tmp/ouch
+
+# grex (从示例生成正则表达式)
+RUN --mount=type=secret,id=github_token \
+    GREX_VERSION=$(/usr/local/bin/get_version pemistahl/grex | sed 's/v//') && \
+    echo "Downloading grex version: ${GREX_VERSION}" && \
+    mkdir -p /tmp/grex && \
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+        curl -fsSL "https://github.com/pemistahl/grex/releases/download/v${GREX_VERSION}/grex-v${GREX_VERSION}-aarch64-unknown-linux-musl.tar.gz" | tar -xz -C /tmp/grex; \
+    else \
+        curl -fsSL "https://github.com/pemistahl/grex/releases/download/v${GREX_VERSION}/grex-v${GREX_VERSION}-x86_64-unknown-linux-musl.tar.gz" | tar -xz -C /tmp/grex; \
+    fi && \
+    cp /tmp/grex/grex /build/output/bin/ && \
+    rm -rf /tmp/grex
+
+# -----------------------------------------------------------------------------
+# 代码格式化工具
+# -----------------------------------------------------------------------------
+
+# ruff (Python linter + formatter, 超快速, musl 静态编译)
+RUN --mount=type=secret,id=github_token \
+    RUFF_VERSION=$(/usr/local/bin/get_version astral-sh/ruff) && \
+    echo "Downloading ruff version: ${RUFF_VERSION}" && \
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+        curl -fsSL "https://github.com/astral-sh/ruff/releases/download/${RUFF_VERSION}/ruff-aarch64-unknown-linux-musl.tar.gz" | tar -xz --strip-components=1 -C /build/output/bin --wildcards '*/ruff'; \
+    else \
+        curl -fsSL "https://github.com/astral-sh/ruff/releases/download/${RUFF_VERSION}/ruff-x86_64-unknown-linux-musl.tar.gz" | tar -xz --strip-components=1 -C /build/output/bin --wildcards '*/ruff'; \
+    fi
+
+# shfmt (Shell/Bash 格式化工具)
+RUN --mount=type=secret,id=github_token \
+    SHFMT_VERSION=$(/usr/local/bin/get_version mvdan/sh) && \
+    echo "Downloading shfmt version: ${SHFMT_VERSION}" && \
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+        curl -fsSL "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/shfmt_${SHFMT_VERSION}_linux_arm64" -o /build/output/bin/shfmt; \
+    else \
+        curl -fsSL "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/shfmt_${SHFMT_VERSION}_linux_amd64" -o /build/output/bin/shfmt; \
+    fi && chmod +x /build/output/bin/shfmt
+
+# stylua (Lua 格式化工具, musl 静态编译)
+RUN --mount=type=secret,id=github_token \
+    STYLUA_VERSION=$(/usr/local/bin/get_version JohnnyMorganz/StyLua) && \
+    echo "Downloading stylua version: ${STYLUA_VERSION}" && \
+    mkdir -p /tmp/stylua && \
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+        curl -fsSL "https://github.com/JohnnyMorganz/StyLua/releases/download/${STYLUA_VERSION}/stylua-linux-aarch64-musl.zip" -o /tmp/stylua/stylua.zip; \
+    else \
+        curl -fsSL "https://github.com/JohnnyMorganz/StyLua/releases/download/${STYLUA_VERSION}/stylua-linux-x86_64-musl.zip" -o /tmp/stylua/stylua.zip; \
+    fi && \
+    unzip -q /tmp/stylua/stylua.zip -d /build/output/bin && \
+    rm -rf /tmp/stylua
+
+# istyle-verilog-formatter (从源码静态编译)
+RUN git clone --depth 1 https://github.com/thomasrussellmurphy/istyle-verilog-formatter.git /tmp/istyle && \
+    cd /tmp/istyle && \
+    g++ -static -O2 -o iStyle src/astyle/*.cpp src/astyle_main.cpp -I src && \
+    cp iStyle /build/output/bin/ && \
+    rm -rf /tmp/istyle
+
+# uv (Python 包管理器, 超快速, musl 静态编译)
+# uv 版本格式不带 v 前缀，直接是版本号如 0.9.25
+RUN --mount=type=secret,id=github_token \
+    UV_VERSION=$(/usr/local/bin/get_version astral-sh/uv | sed 's/^v//') && \
+    echo "Downloading uv version: ${UV_VERSION}" && \
+    mkdir -p /tmp/uv && \
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+        curl -fsSL "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-aarch64-unknown-linux-musl.tar.gz" | tar -xz -C /tmp/uv && \
+        cp /tmp/uv/uv-aarch64-unknown-linux-musl/uv /tmp/uv/uv-aarch64-unknown-linux-musl/uvx /build/output/bin/; \
+    else \
+        curl -fsSL "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-unknown-linux-musl.tar.gz" | tar -xz -C /tmp/uv && \
+        cp /tmp/uv/uv-x86_64-unknown-linux-musl/uv /tmp/uv/uv-x86_64-unknown-linux-musl/uvx /build/output/bin/; \
+    fi && \
+    rm -rf /tmp/uv
+
+# zsh (静态编译版本，使用 romkatv/zsh-bin 的 install 脚本安装)
+RUN echo "Installing zsh via romkatv/zsh-bin install script" && \
+    curl -fsSL --retry 3 --retry-delay 5 -o /tmp/zsh-bin-install.sh "https://github.com/romkatv/zsh-bin/raw/refs/heads/master/install" && \
+    chmod +x /tmp/zsh-bin-install.sh && \
+    /tmp/zsh-bin-install.sh -q -e no -d /build/output/zsh-bin && \
+    cp /build/output/zsh-bin/bin/zsh /build/output/bin/zsh && \
+    mkdir -p /build/output/share && \
+    cp -r /build/output/zsh-bin/share/zsh /build/output/share/ && \
+    if [ -d /build/output/zsh-bin/share/terminfo ]; then \
+        cp -r /build/output/zsh-bin/share/terminfo /build/output/share/; \
+    fi && \
+    rm -rf /build/output/zsh-bin /tmp/zsh-bin-install.sh
+
+# -----------------------------------------------------------------------------
+# 下载 Zimfw 及插件
+# -----------------------------------------------------------------------------
+
+# 下载 zimfw
+RUN mkdir -p /build/output/cache/zim /build/output/cache/zim/modules && \
+    curl -fsSL https://github.com/zimfw/zimfw/releases/latest/download/zimfw.zsh -o /build/output/cache/zim/zimfw.zsh
+
+# 克隆 zimfw 模块到缓存
+RUN git clone --depth 1 https://github.com/zimfw/environment.git /build/output/cache/zim/modules/environment && \
+    git clone --depth 1 https://github.com/zimfw/input.git /build/output/cache/zim/modules/input && \
+    git clone --depth 1 https://github.com/zimfw/utility.git /build/output/cache/zim/modules/utility && \
+    git clone --depth 1 https://github.com/zimfw/git.git /build/output/cache/zim/modules/git && \
+    git clone --depth 1 https://github.com/zimfw/completion.git /build/output/cache/zim/modules/completion && \
+    git clone --depth 1 https://github.com/zimfw/duration-info.git /build/output/cache/zim/modules/duration-info && \
+    git clone --depth 1 https://github.com/zimfw/git-info.git /build/output/cache/zim/modules/git-info && \
+    git clone --depth 1 https://github.com/zimfw/asciiship.git /build/output/cache/zim/modules/asciiship && \
+    git clone --depth 1 https://github.com/zsh-users/zsh-completions.git /build/output/cache/zim/modules/zsh-completions && \
+    git clone --depth 1 https://github.com/zsh-users/zsh-syntax-highlighting.git /build/output/cache/zim/modules/zsh-syntax-highlighting && \
+    git clone --depth 1 https://github.com/zsh-users/zsh-autosuggestions.git /build/output/cache/zim/modules/zsh-autosuggestions && \
+    git clone --depth 1 https://github.com/zsh-users/zsh-history-substring-search.git /build/output/cache/zim/modules/zsh-history-substring-search && \
+    git clone --depth 1 https://github.com/junegunn/fzf.git /build/output/cache/zim/modules/fzf && \
+    git clone --depth 1 https://github.com/agkozak/zsh-z.git /build/output/cache/zim/modules/zsh-z && \
+    git clone --depth 1 https://github.com/chrissicool/zsh-256color.git /build/output/cache/zim/modules/zsh-256color && \
+    find /build/output/cache/zim/modules -type d -name .git -prune -exec rm -rf {} +
+
+# fzf shell 支持文件
+RUN git clone --depth 1 https://github.com/junegunn/fzf.git /tmp/fzf && \
+    rm -rf /tmp/fzf/.git && \
+    mkdir -p /build/output/cache/fzf && \
+    cp -r /tmp/fzf/shell /build/output/cache/fzf/ && \
+    rm -rf /tmp/fzf
+
+# -----------------------------------------------------------------------------
+# 下载字体 (Nerd Fonts) - 只保留 Regular 字体节省空间
+# -----------------------------------------------------------------------------
+RUN --mount=type=secret,id=github_token \
+    FONT_VERSION=$(/usr/local/bin/get_version ryanoasis/nerd-fonts) && \
+    echo "Downloading fonts version: ${FONT_VERSION}" && \
+    mkdir -p /tmp/fonts && \
+    curl -fsSL "https://github.com/ryanoasis/nerd-fonts/releases/download/${FONT_VERSION}/JetBrainsMono.tar.xz" -o /tmp/fonts/JetBrainsMono.tar.xz && \
+    cd /tmp/fonts && tar -xJf JetBrainsMono.tar.xz && \
+    cp JetBrainsMonoNerdFont-Regular.ttf /build/output/fonts/ && \
+    cp JetBrainsMonoNerdFontMono-Regular.ttf /build/output/fonts/ && \
+    rm -rf /tmp/fonts
+
+# -----------------------------------------------------------------------------
+# 使用 UPX 压缩二进制文件节省空间
+# -----------------------------------------------------------------------------
+RUN --mount=type=secret,id=github_token \
+    UPX_VERSION=$(/usr/local/bin/get_version upx/upx | sed 's/^v//') && \
+    echo "Downloading UPX version: ${UPX_VERSION}" && \
+    mkdir -p /tmp/upx && \
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+        curl -fsSL "https://github.com/upx/upx/releases/download/v${UPX_VERSION}/upx-${UPX_VERSION}-arm64_linux.tar.xz" | tar -xJ -C /tmp/upx --strip-components=1; \
+    else \
+        curl -fsSL "https://github.com/upx/upx/releases/download/v${UPX_VERSION}/upx-${UPX_VERSION}-amd64_linux.tar.xz" | tar -xJ -C /tmp/upx --strip-components=1; \
+    fi && \
+    cp /tmp/upx/upx /build/output/bin/upx && \
+    chmod +x /build/output/bin/upx && \
+    echo "=== Compressing binaries with UPX ===" && \
+    for bin in /build/output/bin/* /build/output/vim/bin/*; do \
+        if [ -f "$bin" ] && file "$bin" | grep -q "ELF"; then \
+            echo "Compressing: $(basename $bin)"; \
+            /tmp/upx/upx --best --lzma "$bin" 2>/dev/null || echo "  Skipped (not compressible)"; \
+        fi; \
+    done
+
+# -----------------------------------------------------------------------------
+# 确保所有二进制文件可执行
+# -----------------------------------------------------------------------------
+RUN chmod +x /build/output/bin/*
+
+# 打印下载的版本信息
+RUN echo "=== Downloaded Tools ===" && \
+    ls -la /build/output/bin/ && \
+    echo "=== Zimfw Modules ===" && \
+    ls -la /build/output/cache/zim/modules/
+
+# -----------------------------------------------------------------------------
+# 复制配置文件和安装脚本
+# -----------------------------------------------------------------------------
+COPY configs/ /build/output/configs/
+COPY scripts/install.sh /build/output/install.sh
+COPY scripts/uninstall.sh /build/output/uninstall.sh
+RUN chmod +x /build/output/install.sh /build/output/uninstall.sh
+
+# -----------------------------------------------------------------------------
+# 生成版本信息文件
+# -----------------------------------------------------------------------------
+RUN echo "Red Environment Offline Package" > /build/output/version.txt && \
+    echo "Build Date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> /build/output/version.txt && \
+    echo "Build Host: Docker" >> /build/output/version.txt && \
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+        echo "Architecture: arm64" >> /build/output/version.txt; \
+    else \
+        echo "Architecture: x86_64" >> /build/output/version.txt; \
+    fi
+
+# -----------------------------------------------------------------------------
+# 创建最终输出目录结构并打包
+# 根据架构生成不同名称的压缩包
+# -----------------------------------------------------------------------------
+RUN mkdir -p /output && \
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+        ARCH_NAME="arm64"; \
+    else \
+        ARCH_NAME="x86_64"; \
+    fi && \
+    mv /build/output /build/red_env_offline && \
+    cd /build && \
+    tar -czvf /output/red_env_offline_${ARCH_NAME}.tar.gz red_env_offline/ && \
+    sha256sum /output/red_env_offline_${ARCH_NAME}.tar.gz > /output/red_env_offline_${ARCH_NAME}.tar.gz.sha256 && \
+    echo "=== Final Package ===" && \
+    ls -lh /output/ && \
+    cat /output/red_env_offline_${ARCH_NAME}.tar.gz.sha256
+
+# =============================================================================
+# 最终阶段: 只导出 /output 目录的内容
+# 使用 scratch 镜像确保 --output 只导出打包好的文件
+# =============================================================================
+FROM scratch AS export
+COPY --from=0 /output/ /

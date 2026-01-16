@@ -1,0 +1,74 @@
+# =============================================================================
+#                   Red Environment - 验证环境 Dockerfile
+# =============================================================================
+# 用于验证离线安装包是否正常工作
+# =============================================================================
+
+FROM ubuntu:22.04
+
+LABEL maintainer="Red Environment"
+LABEL description="Verification environment for offline terminal setup"
+
+# 避免交互式安装
+ENV DEBIAN_FRONTEND=noninteractive
+ENV LANG=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
+ENV TERM=xterm-256color
+
+# -----------------------------------------------------------------------------
+# 安装系统依赖
+# -----------------------------------------------------------------------------
+RUN apt-get update && apt-get install -y \
+    zsh \
+    tmux \
+    git \
+    locales \
+    sudo \
+    xz-utils \
+    && rm -rf /var/lib/apt/lists/* \
+    && locale-gen en_US.UTF-8
+
+# -----------------------------------------------------------------------------
+# 创建测试用户
+# -----------------------------------------------------------------------------
+RUN useradd -m -s /bin/zsh testuser && \
+    echo "testuser ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+# -----------------------------------------------------------------------------
+# 切换到测试用户
+# -----------------------------------------------------------------------------
+USER testuser
+WORKDIR /home/testuser
+
+# 定义压缩包文件名
+ARG PACKAGE_FILE=red_env_offline_x86_64.tar.gz
+
+# 复制压缩包并解压
+COPY --chown=testuser:testuser dist/${PACKAGE_FILE} /home/testuser/
+RUN tar -xzf /home/testuser/${PACKAGE_FILE} && rm /home/testuser/${PACKAGE_FILE}
+
+# 复制配置文件
+COPY --chown=testuser:testuser configs/ /home/testuser/configs/
+
+# 复制验证脚本
+COPY --chown=testuser:testuser scripts/verify_tools.sh /home/testuser/verify_tools.sh
+RUN chmod +x /home/testuser/verify_tools.sh
+
+# -----------------------------------------------------------------------------
+# 运行安装脚本
+# -----------------------------------------------------------------------------
+RUN cd /home/testuser/red_env_offline && \
+    chmod +x install.sh && \
+    ./install.sh --yes
+
+# -----------------------------------------------------------------------------
+# 验证命令
+# -----------------------------------------------------------------------------
+# 设置默认 Shell 为 Zsh
+SHELL ["/bin/zsh", "-c"]
+
+# 验证安装的命令（动态扫描）
+RUN /home/testuser/verify_tools.sh
+
+# 默认命令：启动 Zsh
+CMD ["/bin/zsh"]

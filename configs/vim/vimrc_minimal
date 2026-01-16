@@ -1,0 +1,39 @@
+" Minimal Vim config for Red Environment
+set nocompatible
+set encoding=utf8
+set number
+set ruler
+set hidden
+set backspace=indent,eol,start
+set ignorecase
+set smartcase
+set incsearch
+set hlsearch
+set wildmenu
+set expandtab
+set shiftwidth=4
+set tabstop=4
+
+" Enable filetype detection and plugins
+filetype plugin on
+filetype indent on
+
+" Enable syntax highlighting
+syntax enable
+
+" Fix VIMRUNTIME when packaged runtime path differs from build-time path
+if !isdirectory($VIMRUNTIME)
+  let s:red_env_vimruntime = expand("~/.red_env/vim/share/vim/vim91")
+  if isdirectory(s:red_env_vimruntime)
+    let $VIMRUNTIME = s:red_env_vimruntime
+    let &runtimepath = s:red_env_vimruntime . ',' . expand("~/.vim") . ',' . s:red_env_vimruntime . '/after'
+    let &packpath = &runtimepath
+  endif
+endif
+
+" Basic colors
+set background=dark
+try
+  colorscheme desert
+catch
+endtry

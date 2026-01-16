@@ -1,0 +1,25 @@
+# 输出目录
+output/
+output_x86_64/
+output_arm64/
+dist/
+logs/
+
+# Docker 构建临时文件
+*.tmp
+*.temp
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 编辑器配置
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 日志文件
+*.log
+.vscode-ctags

@@ -1,0 +1,82 @@
+# =============================================================================
+#                   Red Environment - 基础构建环境 Dockerfile
+# =============================================================================
+# 预先安装构建依赖与工具，供 Dockerfile.build 复用
+# =============================================================================
+
+FROM ubuntu:22.04
+
+LABEL maintainer="Red Environment"
+LABEL description="Base build environment for offline terminal setup"
+
+# 避免交互式安装
+ENV DEBIAN_FRONTEND=noninteractive
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+
+# GitHub Personal Access Token (可选，用于解除 API 速率限制)
+
+# -----------------------------------------------------------------------------
+# 安装基础工具与构建依赖
+# -----------------------------------------------------------------------------
+RUN apt-get update && apt-get install -y \
+    curl \
+    wget \
+    git \
+    tar \
+    gzip \
+    xz-utils \
+    unzip \
+    ca-certificates \
+    g++ \
+    make \
+    file \
+    pkg-config \
+    libgtk-3-dev \
+    libx11-dev \
+    libxt-dev \
+    libxpm-dev \
+    libsm-dev \
+    libice-dev \
+    libxtst-dev \
+    libxext-dev \
+    libxrender-dev \
+    libxi-dev \
+    libxrandr-dev \
+    libxinerama-dev \
+    libatk1.0-dev \
+    libcairo2-dev \
+    libpango1.0-dev \
+    libgdk-pixbuf-2.0-dev \
+    libncurses-dev \
+    libncursesw5-dev \
+    libtinfo-dev \
+    patchelf \
+    && rm -rf /var/lib/apt/lists/*
+
+# -----------------------------------------------------------------------------
+# 辅助脚本：获取 GitHub 最新版本号
+# 使用 PAT 时通过 Authorization header，否则使用 HTTP 重定向方式
+# -----------------------------------------------------------------------------
+RUN echo '#!/bin/bash' > /usr/local/bin/get_version && \
+    echo 'REPO=$1' >> /usr/local/bin/get_version && \
+    echo 'TOKEN_FILE="/run/secrets/github_token"' >> /usr/local/bin/get_version && \
+    echo 'if [ -f "$TOKEN_FILE" ]; then' >> /usr/local/bin/get_version && \
+    echo '    GITHUB_TOKEN=$(cat "$TOKEN_FILE")' >> /usr/local/bin/get_version && \
+    echo 'fi' >> /usr/local/bin/get_version && \
+    echo 'if [ -n "$GITHUB_TOKEN" ]; then' >> /usr/local/bin/get_version && \
+    echo '    VERSION=$(curl -sH "Authorization: token $GITHUB_TOKEN" "https://api.github.com/repos/$REPO/releases/latest" | grep tag_name | cut -d "\"" -f 4)' >> /usr/local/bin/get_version && \
+    echo 'else' >> /usr/local/bin/get_version && \
+    echo '    VERSION=$(curl -sI "https://github.com/$REPO/releases/latest" | grep -i "location" | sed "s/.*tag\///" | tr -d "\\r\\n")' >> /usr/local/bin/get_version && \
+    echo 'fi' >> /usr/local/bin/get_version && \
+    echo 'if [ -z "$VERSION" ]; then' >> /usr/local/bin/get_version && \
+    echo '    if [ -n "$GITHUB_TOKEN" ]; then' >> /usr/local/bin/get_version && \
+    echo '        VERSION=$(curl -sH "Authorization: token $GITHUB_TOKEN" "https://api.github.com/repos/$REPO/tags?per_page=1" | grep -m 1 "\"name\"" | cut -d "\"" -f 4)' >> /usr/local/bin/get_version && \
+    echo '    else' >> /usr/local/bin/get_version && \
+    echo '        VERSION=$(curl -s "https://api.github.com/repos/$REPO/tags?per_page=1" | grep -m 1 "\"name\"" | cut -d "\"" -f 4)' >> /usr/local/bin/get_version && \
+    echo '    fi' >> /usr/local/bin/get_version && \
+    echo 'fi' >> /usr/local/bin/get_version && \
+    echo 'echo "$VERSION"' >> /usr/local/bin/get_version && \
+    chmod +x /usr/local/bin/get_version
+
+WORKDIR /build

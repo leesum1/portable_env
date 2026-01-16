@@ -1,0 +1,153 @@
+# =============================================================================
+#                        Red Environment - Git 配置
+# =============================================================================
+
+[core]
+    # 默认编辑器
+    editor = vim
+    
+    # 使用 delta 作为分页器
+    pager = delta
+    
+    # 自动转换行尾
+    autocrlf = input
+    
+    # 文件模式
+    fileMode = false
+    
+    # 忽略大小写
+    ignorecase = false
+
+[init]
+    # 默认分支名
+    defaultBranch = main
+
+[user]
+    # 用户信息 (请修改为你的信息)
+    # name = Your Name
+    # email = your.email@example.com
+
+[alias]
+    # 状态
+    s = status -sb
+    st = status
+    
+    # 日志
+    l = log --oneline --graph -20
+    lg = log --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit
+    ll = log --oneline --graph
+    last = log -1 HEAD --stat
+    
+    # 分支
+    br = branch
+    bra = branch -a
+    brd = branch -d
+    
+    # 检出
+    co = checkout
+    cob = checkout -b
+    
+    # 提交
+    ci = commit
+    cm = commit -m
+    ca = commit --amend
+    
+    # 差异
+    d = diff
+    dc = diff --cached
+    ds = diff --stat
+    
+    # 添加
+    a = add
+    aa = add --all
+    ap = add -p
+    
+    # 重置
+    unstage = reset HEAD --
+    undo = reset --soft HEAD~1
+    
+    # 暂存
+    stash = stash push
+    pop = stash pop
+    
+    # 远程
+    f = fetch
+    pl = pull
+    ps = push
+    
+    # 变基
+    rb = rebase
+    rbi = rebase -i
+    rbc = rebase --continue
+    rba = rebase --abort
+
+[color]
+    ui = auto
+    diff = auto
+    status = auto
+    branch = auto
+
+[color "diff"]
+    meta = yellow bold
+    frag = magenta bold
+    old = red bold
+    new = green bold
+
+[color "status"]
+    added = green
+    changed = yellow
+    untracked = red
+
+[diff]
+    # 使用更好的差异算法
+    algorithm = histogram
+    
+    # 显示重命名
+    renames = true
+    
+    # 颜色移动的行
+    colorMoved = default
+
+[merge]
+    # 合并工具
+    tool = vimdiff
+    
+    # 冲突样式
+    conflictstyle = diff3
+
+[pull]
+    # 拉取时变基
+    rebase = true
+
+[push]
+    # 默认推送当前分支
+    default = current
+    
+    # 自动设置上游
+    autoSetupRemote = true
+
+[fetch]
+    # 自动清理远程已删除的分支
+    prune = true
+
+[rebase]
+    # 自动暂存
+    autoStash = true
+
+[interactive]
+    diffFilter = delta --color-only
+
+[delta]
+    navigate = true
+    light = false
+    side-by-side = true
+    line-numbers = true
+    syntax-theme = Dracula
+
+[credential]
+    # 凭证缓存
+    helper = cache --timeout=3600
+
+[include]
+    # 本地配置 (可选)
+    path = ~/.gitconfig.local
