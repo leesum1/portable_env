@@ -67,9 +67,9 @@ jobs:
           path: dist/
           retention-days: 7
 
-  # ARM64 native build on ubuntu-latest-arm64
+  # ARM64 native build on ubuntu-22.04-arm
   build-arm64:
-    runs-on: ubuntu-latest-arm64
+    runs-on: ubuntu-22.04-arm
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -184,7 +184,7 @@ jobs:
   # Verify ARM64
   verify-arm64:
     needs: build-arm64
-    runs-on: ubuntu-latest-arm64
+    runs-on: ubuntu-22.04-arm
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
