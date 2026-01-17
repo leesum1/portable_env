@@ -68,9 +68,9 @@ RUN SOAR_VERSION=$(/usr/local/bin/get_version pkgforge/soar | sed 's/^v//') && \
     fi && \
     chmod +x /usr/local/bin/soar || true
 
-# Copy local helper script for fetching static releases using soar
-COPY scripts/soar_fetch_static.sh /usr/local/bin/soar_fetch_static.sh
-RUN chmod +x /usr/local/bin/soar_fetch_static.sh || true
+# Copy local helper script for fetching static releases using soar (Python implementation)
+COPY scripts/soar_fetch_static.py /usr/local/bin/soar_fetch_static.py
+RUN chmod +x /usr/local/bin/soar_fetch_static.py || true && ln -sf /usr/local/bin/soar_fetch_static.py /usr/local/bin/soar_fetch_static.sh || true
 
 
 # -----------------------------------------------------------------------------
@@ -139,53 +139,11 @@ RUN git clone --depth 1 https://github.com/amix/vimrc.git /build/output/vim_runt
         /build/output/vim_runtime/install_basic_vimrc.sh \
         /build/output/vim_runtime/install_awesome_parameterized.sh
 
-# zoxide - handled via soar_fetch_static.sh (see unified fetch block)
-# (Previously downloaded via curl/tar; now fetched by /usr/local/bin/soar_fetch_static.sh.)
-
-# dust - handled via soar_fetch_static.sh (see unified fetch block)
-# (Previously downloaded via curl/tar; now fetched by /usr/local/bin/soar_fetch_static.sh.)
-
-# bottom - handled via soar_fetch_static.sh (see unified fetch block)
-
-# procs - handled via soar_fetch_static.sh (see unified fetch block)
-
-# sd - handled via soar_fetch_static.sh (see unified fetch block)
-
-
-# tokei - handled via soar_fetch_static.sh (see unified fetch block)
-
-
-# duf - handled via soar_fetch_static.sh (see unified fetch block)
-
-# jq - handled via soar_fetch_static.sh (see unified fetch block)
-
-# yq - handled via soar_fetch_static.sh (see unified fetch block)
-
-# glow - handled via soar_fetch_static.sh (see unified fetch block)
-
-# yazi - handled via soar_fetch_static.sh (see unified fetch block)
-
-# zellij - handled via soar_fetch_static.sh (see unified fetch block)
-
-# atuin - handled via soar_fetch_static.sh (see unified fetch block)
-
-# navi - handled via soar_fetch_static.sh (see unified fetch block)
-# (Previously had a fetch_release_asset + soar fallback; now handled by /usr/local/bin/soar_fetch_static.sh)
-
-# ouch - handled via soar_fetch_static.sh (see unified fetch block)
-
-# grex - handled via soar_fetch_static.sh (see unified fetch block)
 
 # -----------------------------------------------------------------------------
 # 代码格式化工具
 # -----------------------------------------------------------------------------
 
-# ruff - handled via soar_fetch_static.sh (see unified fetch block)
-
-# shfmt - handled via soar_fetch_static.sh (see unified fetch block)
-
-# stylua (Lua 格式化工具, musl 静态编译)
-# stylua - handled via soar_fetch_static.sh (see unified fetch block)
 
 # istyle-verilog-formatter (从源码静态编译)
 RUN git clone --depth 1 https://github.com/thomasrussellmurphy/istyle-verilog-formatter.git /tmp/istyle && \
