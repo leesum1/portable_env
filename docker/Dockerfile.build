@@ -48,9 +48,9 @@ COPY scripts/get_version /usr/local/bin/get_version
 RUN chmod +x /usr/local/bin/get_version && \
     apt-get update && apt-get install -y musl-tools build-essential gcc pkg-config libssl-dev ca-certificates curl git && rm -rf /var/lib/apt/lists/*
 
-# Helper: fetch_release_asset removed — use /usr/local/bin/soar_fetch_static.sh for release fetching
+# Helper: fetch_release_asset removed — use /usr/local/bin/soar_fetch_static.py for release fetching
 # This repository no longer includes the legacy fetch_release_asset helper. See
-# /usr/local/bin/soar_fetch_static.sh which performs GitHub + pkgforge (soar) downloads
+# /usr/local/bin/soar_fetch_static.py which performs GitHub + pkgforge (soar) downloads
 # and extracts/copies binaries into the destination directory.
 
 # Install Soar (pkgforge client) for optional pkgforge downloads
@@ -68,68 +68,48 @@ RUN SOAR_VERSION=$(/usr/local/bin/get_version pkgforge/soar | sed 's/^v//') && \
     fi && \
     chmod +x /usr/local/bin/soar || true
 
-# Copy local helper script for fetching static releases using soar (Python implementation)
+# Copy local helper scripts for fetching static releases using soar
 COPY scripts/soar_fetch_static.py /usr/local/bin/soar_fetch_static.py
-RUN chmod +x /usr/local/bin/soar_fetch_static.py || true && ln -sf /usr/local/bin/soar_fetch_static.py /usr/local/bin/soar_fetch_static.sh || true
+COPY scripts/batch_soar_fetch.py /usr/local/bin/batch_soar_fetch.py
+COPY release_files/packages.json /tmp/packages.json
+RUN chmod +x /usr/local/bin/soar_fetch_static.py /usr/local/bin/batch_soar_fetch.py || true
 
 
 # -----------------------------------------------------------------------------
-# 使用 soar_fetch_static.sh 下载 CLI 工具并扁平化到 /build/output/bin
-#
-# 改进: 先将每个仓库下载到独立的临时目录 (/tmp/soar_fetch/*)，
-# 在所有仓库下载完毕后统一从这些目录递归查找所有可执行文件并移动到 /build/output/bin
-# 这样能避免在下载过程中覆盖/冲突，并且保证“全部下载完再扁平化”的行为
+# 使用 batch_soar_fetch.py 下载 CLI 工具并扁平化到 /build/output/bin
+# 该脚本会：
+# 1. 批量下载所有包
+# 2. 自动检测 ELF 二进制和 shebang 脚本
+# 3. 组织到输出目录
+# 4. 记录失败的包
+# 5. 设置可执行权限
+# 包列表从 release_files/packages.json 读取
 # -----------------------------------------------------------------------------
 RUN set -eux; \
-    # 映射 TARGETARCH 到 soar_fetch_static.sh 接受的 arch 值 (x86_64|arm64)
     ARCH="$( [ "$TARGETARCH" = "arm64" ] && echo arm64 || echo x86_64 )"; \
-    PACKAGES_ALL="junegunn/fzf sharkdp/bat lsd-rs/lsd BurntSushi/ripgrep sharkdp/fd dandavison/delta jesseduffield/lazygit jorgerojas26/lazysql sigoden/aichat Gaurav-Gosain/tuios ajeetdsouza/zoxide bootandy/dust ClementTsang/bottom dalance/procs chmln/sd XAMPPRocky/tokei muesli/duf jqlang/jq mikefarah/yq charmbracelet/glow sxyazi/yazi zellij-org/zellij atuinsh/atuin denisidoro/navi ouch-org/ouch pemistahl/grex astral-sh/ruff astral-sh/uv mvdan/sh JohnnyMorganz/StyLua"; \
-    mkdir -p /build/output/bin /tmp/soar_fetch; \
-    failures=""; \
-    BASE_TMP="/tmp/soar_fetch"; \
-    for repo in $PACKAGES_ALL; do \
-      echo "[soar_fetch] fetching $repo for arch=$ARCH"; \
-      TMPDIR=$(mktemp -d -p "$BASE_TMP" "fetch.XXXX") || TMPDIR=$(mktemp -d); \
-      if /usr/local/bin/soar_fetch_static.sh "$repo" --arch "$ARCH" --dest "$TMPDIR"; then \
-        echo "[soar_fetch] $repo downloaded to $TMPDIR"; \
-        echo "[soar_fetch] $repo file count: $(find "$TMPDIR" -type f | wc -l)"; \
-      else \
-        echo "[soar_fetch] $repo failed"; failures="$failures $repo"; fi; \
-    done; \
-    # 打印总下载文件数以便调试
-    echo "[soar_fetch] total downloaded files: $(find "$BASE_TMP" -type f | wc -l)"; \
-    # 严格的一次性递归检测所有下载文件（ELF 二进制 / shebang 脚本）并搬运到 bin
-    # 使用 xargs + bash 每个文件单独处理，避免 /bin/sh 不支持 read -d 的问题
-    find "$BASE_TMP" -type f -print0 | xargs -0 -n1 -I{} bash -c '\
-        f="$1"; \
-        base=$(basename "'$'f"); \
-        dest="/build/output/bin/$base"; \
-        if [ -e "$dest" ]; then echo "[soar_fetch] skip existing $base"; exit 0; fi; \
-        if file -L "$f" 2>/dev/null | grep -qEi "ELF"; then \
-            mv -n "$f" "$dest" 2>/dev/null || cp -u "$f" "$dest" 2>/dev/null || true; \
-            echo "[soar_fetch] moved binary $base"; exit 0; \
-        fi; \
-        if head -n 1 "$f" 2>/dev/null | grep -q "^#!"; then \
-            cp -u "$f" "$dest" 2>/dev/null || true; echo "[soar_fetch] copied script $base"; exit 0; \
-        fi; \
-        echo "[soar_fetch] ignored $base"' _ {} ; \
-    # 清理临时下载目录
-    rm -rf "$BASE_TMP" || true; \
-    if [ -n "$failures" ]; then echo "FAILED_FETCHES:$failures" > /build/output/FAILED_FETCHES.txt; fi; \
-    if [ -f /build/output/FAILED_FETCHES.txt ]; then echo "=== FAILED_FETCHES ==="; cat /build/output/FAILED_FETCHES.txt || true; fi; \
-    # Ensure binaries are executable
-    chmod -R a+x /build/output/bin || true; \
+    mkdir -p /build/output/bin; \
+    python3 /usr/local/bin/batch_soar_fetch.py \
+        /tmp/packages.json \
+        --target-arch "$ARCH" \
+        --output-dir /build/output \
+        --soar-script /usr/local/bin/soar_fetch_static.py; \
     echo "=== /build/output/bin contents ==="; ls -la /build/output/bin || true
 
 
-# Vim: do not attempt to fetch/build Vim binary during build (keep plugin/runtime only)
+
+# tuios
 RUN \
-    VIM_VERSION=$(/usr/local/bin/get_version vim/vim | sed 's/v//') && \
-    echo "[vim] Skipping acquisition of Vim binary for offline package (we keep runtime/plugins only)" >&2 && \
-    # Ensure an exception entry is recorded for auditing so verify recognizes the intentional omission
-    echo "vim:${VIM_VERSION}:MISSING_STATIC" >> /build/output/DYNAMIC_EXCEPTIONS.txt && \
-    echo "vim documented as MISSING_STATIC" && \
-    :
+    TUIOS_VERSION=$(/usr/local/bin/get_version Gaurav-Gosain/tuios | sed 's/^v//') && \
+    echo "Downloading tuios version: ${TUIOS_VERSION}" && \
+    mkdir -p /tmp/tuios && \
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+        curl -fsSL "https://github.com/Gaurav-Gosain/tuios/releases/download/v${TUIOS_VERSION}/tuios_${TUIOS_VERSION}_Linux_arm64.tar.gz" | tar -xz -C /tmp/tuios; \
+    else \
+        curl -fsSL "https://github.com/Gaurav-Gosain/tuios/releases/download/v${TUIOS_VERSION}/tuios_${TUIOS_VERSION}_Linux_x86_64.tar.gz" | tar -xz -C /tmp/tuios; \
+    fi && \
+    cp /tmp/tuios/tuios /build/output/bin/ && \
+    rm -rf /tmp/tuios
+
 
 # amix/vimrc (The Ultimate vimrc - awesome version)
 RUN git clone --depth 1 https://github.com/amix/vimrc.git /build/output/vim_runtime && \
@@ -138,7 +118,6 @@ RUN git clone --depth 1 https://github.com/amix/vimrc.git /build/output/vim_runt
     chmod +x /build/output/vim_runtime/install_awesome_vimrc.sh \
         /build/output/vim_runtime/install_basic_vimrc.sh \
         /build/output/vim_runtime/install_awesome_parameterized.sh
-
 
 # -----------------------------------------------------------------------------
 # 代码格式化工具
@@ -152,8 +131,8 @@ RUN git clone --depth 1 https://github.com/thomasrussellmurphy/istyle-verilog-fo
     cp iStyle /build/output/bin/ && \
     rm -rf /tmp/istyle
 
-# uv - handled via soar_fetch_static.sh (see unified fetch block)
-# (Previously downloaded via curl/tar; now fetched by /usr/local/bin/soar_fetch_static.sh.)
+# uv - handled via soar_fetch_static.py (see unified fetch block)
+# (Previously downloaded via curl/tar; now fetched by /usr/local/bin/soar_fetch_static.py.)
 
 # zsh (静态编译版本，使用 romkatv/zsh-bin 的 install 脚本安装)
 RUN echo "Installing zsh via romkatv/zsh-bin install script" && \

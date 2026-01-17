@@ -1,0 +1,33 @@
+{
+  "packages": [
+    "junegunn/fzf",
+    "sharkdp/bat",
+    "lsd-rs/lsd",
+    "BurntSushi/ripgrep",
+    "sharkdp/fd",
+    "dandavison/delta",
+    "jesseduffield/lazygit",
+    "jorgerojas26/lazysql",
+    "sigoden/aichat",
+    "Gaurav-Gosain/tuios",
+    "ajeetdsouza/zoxide",
+    "bootandy/dust",
+    "ClementTsang/bottom",
+    "dalance/procs",
+    "chmln/sd",
+    "XAMPPRocky/tokei",
+    "muesli/duf",
+    "jqlang/jq",
+    "mikefarah/yq",
+    "charmbracelet/glow",
+    "sxyazi/yazi",
+    "zellij-org/zellij",
+    "atuinsh/atuin",
+    "denisidoro/navi",
+    "ouch-org/ouch",
+    "pemistahl/grex",
+    "astral-sh/ruff",
+    "astral-sh/uv",
+    "mvdan/sh"
+  ]
+}

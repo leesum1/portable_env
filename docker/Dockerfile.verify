@@ -26,6 +26,7 @@ RUN apt-get update && apt-get install -y \
     sudo \
     xz-utils \
     file \
+    vim \
     binutils \
     && rm -rf /var/lib/apt/lists/* \
     && locale-gen en_US.UTF-8
@@ -67,10 +68,10 @@ RUN cd /home/testuser/red_env_offline && \
 # 验证命令
 # -----------------------------------------------------------------------------
 # 设置默认 Shell 为 Zsh
-SHELL ["/bin/zsh", "-c"]
+SHELL ["/home/testuser/.red_env/bin/zsh", "-c"]
 
 # 验证安装的命令（动态扫描）
 RUN /home/testuser/verify_tools.sh
 
 # 默认命令：启动 Zsh
-CMD ["/bin/zsh"]
+CMD ["/home/testuser/.red_env/bin/zsh"]

@@ -155,11 +155,24 @@ install_binaries() {
 
     # 复制二进制文件
     if [ -d "${SCRIPT_DIR}/bin" ]; then
-        cp -f "${SCRIPT_DIR}/bin/"* "$BIN_DIR/"
-        chmod +x "$BIN_DIR/"*
+        # 逐个处理，目录用 -r，文件复制后设置可执行权限
+        for src in "${SCRIPT_DIR}/bin/"*; do
+            if [ -d "$src" ]; then
+                cp -r "$src" "$BIN_DIR/" || true
+            else
+                cp -f "$src" "$BIN_DIR/" || true
+                chmod +x "$BIN_DIR/$(basename "$src")" || true
+            fi
+        done
         log_success "CLI 工具安装完成"
     else
         log_warn "未找到 bin 目录，跳过 CLI 工具安装"
+    fi
+
+    # Copy recorded dynamic exceptions (if any) into install dir for auditing
+    if [ -f "${SCRIPT_DIR}/DYNAMIC_EXCEPTIONS.txt" ]; then
+        cp "${SCRIPT_DIR}/DYNAMIC_EXCEPTIONS.txt" "${INSTALL_DIR}/DYNAMIC_EXCEPTIONS.txt"
+        log_info "Copied DYNAMIC_EXCEPTIONS.txt to ${INSTALL_DIR}/DYNAMIC_EXCEPTIONS.txt"
     fi
 
     # 安装 zsh share 目录 (函数补全等)
@@ -178,22 +191,12 @@ install_binaries() {
         log_success "terminfo 安装完成"
     fi
 
-    # 安装 Vim
+    # 安装 Vim - 已禁用（仅保留 runtime/plugin 支持）
     if [ -d "${SCRIPT_DIR}/vim" ]; then
-        log_info "安装 Vim..."
-        rm -rf "${INSTALL_DIR}/vim"
-        cp -r "${SCRIPT_DIR}/vim" "${INSTALL_DIR}/"
-
-        # 创建 Vim 符号链接
-        ln -sf "${INSTALL_DIR}/vim/bin/vim" "$BIN_DIR/vim"
-        ln -sf "${INSTALL_DIR}/vim/bin/vim" "$BIN_DIR/vi"
-        if [ -x "${INSTALL_DIR}/vim/bin/gvim" ]; then
-            ln -sf "${INSTALL_DIR}/vim/bin/gvim" "${BIN_DIR}/gvim"
-        fi
-
-        log_success "Vim 安装完成"
+        log_info "已省略安装捆绑的 Vim 二进制（仅保留 runtime / 插件配置）"
+        log_warn "跳过将捆绑的 Vim 二进制复制到 ${INSTALL_DIR}/vim，并且不创建 vim/vi 符号链接"
     else
-        log_warn "未找到 vim 目录，跳过 Vim 安装"
+        log_warn "未找到 vim 目录（或已省略），跳过 Vim 二进制安装"
     fi
 }
 
@@ -266,8 +269,12 @@ install_configs() {
             chmod +x "${HOME}/.vim_runtime/install_awesome_vimrc.sh"
             sh "${HOME}/.vim_runtime/install_awesome_vimrc.sh"
                         local vim_runtime_dir=""
+                        # 优先使用包含完整 Vim 的 runtime（如果存在），否则回退到我们刚复制到 ${HOME}/.vim_runtime 的打包 runtime
                         if [ -d "${INSTALL_DIR}/vim/share/vim" ]; then
-                                vim_runtime_dir="$(ls -d "${INSTALL_DIR}/vim/share/vim"/vim* 2>/dev/null | sort -V | tail -n 1)"
+                                vim_runtime_dir="$(ls -d "${INSTALL_DIR}/vim/share/vim"/vim* 2>/dev/null | sort -V | tail -n 1 || true)"
+                        fi
+                        if [ -z "$vim_runtime_dir" ] && [ -d "${HOME}/.vim_runtime" ]; then
+                                vim_runtime_dir="$(ls -d "${HOME}/.vim_runtime"/* 2>/dev/null | sort -V | tail -n 1 || true)"
                         fi
                         if [ -n "$vim_runtime_dir" ]; then
                                 cat > "${HOME}/.vim_runtime/my_configs.vim" << EOF
@@ -285,7 +292,7 @@ if isdirectory(\$VIMRUNTIME)
 endif
 EOF
                         else
-                                log_warn "未找到 Vim runtime 目录，跳过 Awesome vimrc runtime 修复"
+                                log_warn "未找到 Vim runtime 目录（已尝试安装包与 ${HOME}/.vim_runtime），跳过 Awesome vimrc runtime 修复"
                         fi
             vimrc_installed=true
             log_success "Awesome vimrc 安装完成"

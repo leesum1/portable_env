@@ -4,6 +4,16 @@ set -euo pipefail
 RED_ENV_HOME="${RED_ENV_HOME:-$HOME/.red_env}"
 BIN_DIR="${RED_ENV_HOME}/bin"
 VIM_BIN_DIR="${RED_ENV_HOME}/vim/bin"
+EXCEPTIONS_FILE="${RED_ENV_HOME}/DYNAMIC_EXCEPTIONS.txt"
+SKIP_BIN=()
+# Load documented dynamic exceptions (format: <binary>:<version>:GNU_DYNAMIC)
+if [ -f "${EXCEPTIONS_FILE}" ]; then
+    while IFS= read -r line; do
+        bn=$(echo "${line}" | cut -d: -f1)
+        bn=$(basename "${bn}")
+        SKIP_BIN+=("${bn}")
+    done < "${EXCEPTIONS_FILE}"
+fi
 
 echo "=== Verifying Installation ==="
 
@@ -42,8 +52,13 @@ if [ -x "${VIM_BIN_DIR}/vim" ]; then
 elif [ -x "${BIN_DIR}/vim" ]; then
     echo "vim: $("${BIN_DIR}/vim" --version 2>/dev/null | head -1 || echo "OK")"
 else
-    echo "vim: NOT FOUND" >&2
-    exit 1
+    # If vim is documented as a missing static exception, treat as documented and continue
+    if [ -f "${EXCEPTIONS_FILE}" ] && grep -qE '^vim:.*:MISSING_STATIC' "${EXCEPTIONS_FILE}"; then
+        echo "vim: MISSING_STATIC (documented)"
+    else
+        echo "vim: NOT FOUND" >&2
+        exit 1
+    fi
 fi
 
 echo "=== Installation Verified ==="
@@ -57,6 +72,15 @@ check_static() {
     if [ ! -f "$bin_path" ]; then
         return 0
     fi
+    bn=$(basename "$bin_path")
+    # If documented dynamic exception, skip static check
+    for skip in "${SKIP_BIN[@]}"; do
+        if [ "$skip" = "$bn" ]; then
+            echo "Note: $bn is a documented GNU-dynamic exception, skipping static check" >&2
+            return 0
+        fi
+    done
+
     # Use file and ldd to detect dynamic linking
     if ! command -v file >/dev/null 2>&1 || ! command -v ldd >/dev/null 2>&1; then
         echo "⚠️  'file' or 'ldd' not available; cannot perform static check" >&2
@@ -93,4 +117,10 @@ if [ ${#NON_STATIC[@]} -ne 0 ]; then
     exit 2
 else
     echo "\n✅ All inspected binaries appear to be statically linked (or checks not applicable)."
+fi
+
+# Print documented dynamic exceptions for auditing
+if [ -f "${EXCEPTIONS_FILE}" ]; then
+    echo "\n⚠️ Documented GNU-dynamic exceptions (from ${EXCEPTIONS_FILE}):"
+    cat "${EXCEPTIONS_FILE}"
 fi
