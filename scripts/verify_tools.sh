@@ -47,3 +47,50 @@ else
 fi
 
 echo "=== Installation Verified ==="
+
+# -----------------------------------------------------------------------------
+# Static linking checks
+# -----------------------------------------------------------------------------
+NON_STATIC=()
+check_static() {
+    bin_path="$1"
+    if [ ! -f "$bin_path" ]; then
+        return 0
+    fi
+    # Use file and ldd to detect dynamic linking
+    if ! command -v file >/dev/null 2>&1 || ! command -v ldd >/dev/null 2>&1; then
+        echo "⚠️  'file' or 'ldd' not available; cannot perform static check" >&2
+        return 0
+    fi
+    file_out=$(file -b "$bin_path" || true)
+    if echo "$file_out" | grep -qiE "statically linked|statically-linked|statically linked"; then
+        return 0
+    fi
+    ldd_out=$(ldd "$bin_path" 2>&1 || true)
+    if echo "$ldd_out" | grep -qi "not a dynamic executable"; then
+        return 0
+    fi
+    # If ldd prints library dependencies, it's dynamic
+    if echo "$ldd_out" | grep -qi "=>"; then
+        NON_STATIC+=("$bin_path")
+    fi
+}
+
+# List of binaries to check (common culprits)
+CANDIDATES=("$BIN_DIR/jq" "$BIN_DIR/yq" "$BIN_DIR/shfmt" "$BIN_DIR/glow" "$BIN_DIR/duf" "$VIM_BIN_DIR/vim" "$BIN_DIR/vim")
+for b in "${CANDIDATES[@]}"; do
+    check_static "$b"
+done
+
+if [ ${#NON_STATIC[@]} -ne 0 ]; then
+    echo "\n⚠️  Non-static binaries detected:" >&2
+    for nb in "${NON_STATIC[@]}"; do
+        echo " - $nb" >&2
+        file "$nb" || true
+        ldd "$nb" || true
+    done
+    echo "\nPlease replace them with statically linked alternatives or adjust the build." >&2
+    exit 2
+else
+    echo "\n✅ All inspected binaries appear to be statically linked (or checks not applicable)."
+fi

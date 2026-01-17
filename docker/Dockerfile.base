@@ -58,25 +58,11 @@ RUN apt-get update && apt-get install -y \
 # 辅助脚本：获取 GitHub 最新版本号
 # 使用 PAT 时通过 Authorization header，否则使用 HTTP 重定向方式
 # -----------------------------------------------------------------------------
-RUN echo '#!/bin/bash' > /usr/local/bin/get_version && \
-    echo 'REPO=$1' >> /usr/local/bin/get_version && \
-    echo 'TOKEN_FILE="/run/secrets/github_token"' >> /usr/local/bin/get_version && \
-    echo 'if [ -f "$TOKEN_FILE" ]; then' >> /usr/local/bin/get_version && \
-    echo '    GITHUB_TOKEN=$(cat "$TOKEN_FILE")' >> /usr/local/bin/get_version && \
-    echo 'fi' >> /usr/local/bin/get_version && \
-    echo 'if [ -n "$GITHUB_TOKEN" ]; then' >> /usr/local/bin/get_version && \
-    echo '    VERSION=$(curl -sH "Authorization: token $GITHUB_TOKEN" "https://api.github.com/repos/$REPO/releases/latest" | grep tag_name | cut -d "\"" -f 4)' >> /usr/local/bin/get_version && \
-    echo 'else' >> /usr/local/bin/get_version && \
-    echo '    VERSION=$(curl -sI "https://github.com/$REPO/releases/latest" | grep -i "location" | sed "s/.*tag\///" | tr -d "\\r\\n")' >> /usr/local/bin/get_version && \
-    echo 'fi' >> /usr/local/bin/get_version && \
-    echo 'if [ -z "$VERSION" ]; then' >> /usr/local/bin/get_version && \
-    echo '    if [ -n "$GITHUB_TOKEN" ]; then' >> /usr/local/bin/get_version && \
-    echo '        VERSION=$(curl -sH "Authorization: token $GITHUB_TOKEN" "https://api.github.com/repos/$REPO/tags?per_page=1" | grep -m 1 "\"name\"" | cut -d "\"" -f 4)' >> /usr/local/bin/get_version && \
-    echo '    else' >> /usr/local/bin/get_version && \
-    echo '        VERSION=$(curl -s "https://api.github.com/repos/$REPO/tags?per_page=1" | grep -m 1 "\"name\"" | cut -d "\"" -f 4)' >> /usr/local/bin/get_version && \
-    echo '    fi' >> /usr/local/bin/get_version && \
-    echo 'fi' >> /usr/local/bin/get_version && \
-    echo 'echo "$VERSION"' >> /usr/local/bin/get_version && \
-    chmod +x /usr/local/bin/get_version
+# get_version script removed from base image (moved to Dockerfile.build)
+# original helper removed to avoid embedding secrets in the base image
+
+# remaining get_version bits removed
+# the helper is now created in Dockerfile.build with HTTPS-only logic and debug output
+
 
 WORKDIR /build

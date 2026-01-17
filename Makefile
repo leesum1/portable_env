@@ -17,8 +17,7 @@
 .PHONY: all build-all build-x86_64 build-arm64 build-base build-base-x86_64 build-base-arm64 verify-all verify-x86_64 verify-arm64 verify-shell-x86_64 verify-shell-arm64 clean help
 
 
-GITHUB_TOKEN := ""
-export GITHUB_TOKEN
+
 
 # 目录定义
 DIST_DIR := dist
@@ -31,6 +30,10 @@ BASE_IMAGE_ARM64 := red_env_build_base:arm64
 # Docker buildx 构建参数
 # 使用 default builder (docker driver) 以获得 --network host 支持
 DOCKER_BUILDX_FLAGS := --builder default --network host
+# Docker secret flags are disabled by default (opt-in behavior)
+DOCKER_SECRET_FLAGS :=
+
+# 默认目标
 
 # 默认目标
 all: build-all verify-all
@@ -48,7 +51,7 @@ build-base-x86_64: $(LOGS_DIR)
 	@echo "=== 构建 x86_64 基础构建镜像 ==="
 	docker buildx build $(DOCKER_BUILDX_FLAGS) \
 		--platform linux/amd64 \
-		--secret id=github_token,env=GITHUB_TOKEN \
+		$(DOCKER_SECRET_FLAGS) \
 		-f docker/Dockerfile.base \
 		-t $(BASE_IMAGE_X86_64) \
 		--load \
@@ -59,7 +62,7 @@ build-base-arm64: $(LOGS_DIR)
 	@echo "=== 构建 ARM64 基础构建镜像 ==="
 	docker buildx build $(DOCKER_BUILDX_FLAGS) \
 		--platform linux/arm64 \
-		--secret id=github_token,env=GITHUB_TOKEN \
+		$(DOCKER_SECRET_FLAGS) \
 		-f docker/Dockerfile.base \
 		-t $(BASE_IMAGE_ARM64) \
 		--load \
@@ -70,7 +73,7 @@ build-x86_64: build-base-x86_64 $(DIST_DIR) $(LOGS_DIR)
 	@echo "=== 构建 x86_64 离线包 ==="
 	docker buildx build $(DOCKER_BUILDX_FLAGS) \
 		--platform linux/amd64 \
-		--secret id=github_token,env=GITHUB_TOKEN \
+		$(DOCKER_SECRET_FLAGS) \
 		--build-arg BASE_IMAGE=$(BASE_IMAGE_X86_64) \
 		-f docker/Dockerfile.build \
 		-t red_env_builder:x86_64 \
@@ -85,7 +88,7 @@ build-arm64: build-base-arm64 $(DIST_DIR) $(LOGS_DIR)
 	@echo "=== 构建 ARM64 离线包 ==="
 	docker buildx build $(DOCKER_BUILDX_FLAGS) \
 		--platform linux/arm64 \
-		--secret id=github_token,env=GITHUB_TOKEN \
+		$(DOCKER_SECRET_FLAGS) \
 		--build-arg BASE_IMAGE=$(BASE_IMAGE_ARM64) \
 		-f docker/Dockerfile.build \
 		-t red_env_builder:arm64 \

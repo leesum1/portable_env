@@ -11,8 +11,7 @@
 #   # ARM64 架构
 #   docker build --platform linux/arm64 -f docker/Dockerfile.build -t red_env_builder:arm64 .
 #
-#   # 使用 PAT 解除 API 速率限制
-#   docker build --secret id=github_token,env=GITHUB_TOKEN -f docker/Dockerfile.build -t red_env_builder:x86_64 .
+#   # 若需要可通过显式传入私有 token 来解除 API 速率限制（可选，不作为默认行为）
 # =============================================================================
 
 ARG BASE_IMAGE=red_env_build_base:x86_64
@@ -29,7 +28,7 @@ ENV LC_ALL=C.UTF-8
 # 架构参数
 ARG TARGETARCH
 
-# GitHub Personal Access Token (可选，用于解除 API 速率限制)
+# 私有 token：可选，默认构建不依赖它（仅在需要时显式提供）
 
 # -----------------------------------------------------------------------------
 # 创建工作目录
@@ -43,13 +42,211 @@ RUN mkdir -p /build/output/bin \
     /build/output/fonts \
     /build/output/vim_runtime
 
+# Helper: get_version (HTTPS-only, debug output)
+# Usage: /usr/local/bin/get_version owner/repo  -> prints latest tag name
+RUN cat > /usr/local/bin/get_version <<'EOF'
+#!/bin/bash
+set -eu
+REPO="$1"
+echo "[get_version] REPO=$REPO" >&2
+VERSION=""
+
+# Try releases/latest redirect header
+VERSION=$(curl -sI "https://github.com/$REPO/releases/latest" | grep -i "location:" | sed -n "s/.*tag\///p" | tr -d "\r\n" || true)
+echo "[get_version] from releases/latest raw=$VERSION" >&2
+
+# Fall back to tags page parsing
+if [ -z "$VERSION" ]; then
+  VERSION=$(curl -s "https://github.com/$REPO/tags" | sed -n 's/.*\/releases\/tag\/\([^\"]*\)\".*/\1/p' | head -n1 || true)
+  echo "[get_version] from tags page raw=$VERSION" >&2
+fi
+
+# Final fallback: git ls-remote tags
+if [ -z "$VERSION" ]; then
+  echo "[get_version] tags page empty, falling back to git ls-remote" >&2
+  VERSION=$(git ls-remote --tags --refs "https://github.com/$REPO.git" | awk -F"/" '/refs\/tags\//{print $NF}' | sed 's/\^{}$//' | sort -V | tail -n1 || true)
+  echo "[get_version] from git ls-remote raw=$VERSION" >&2
+fi
+
+echo "[get_version] final=$VERSION" >&2
+echo "$VERSION"
+EOF
+RUN chmod +x /usr/local/bin/get_version && \
+    apt-get update && apt-get install -y musl-tools build-essential gcc pkg-config libssl-dev ca-certificates curl git && rm -rf /var/lib/apt/lists/*
+
+# Helper: fetch_release_asset
+RUN cat > /usr/local/bin/fetch_release_asset <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+REPO="$1"
+VERSION="$2"
+OUT_DIR="$3"
+shift 3
+for a in "$@"; do
+  URL="https://github.com/${REPO}/releases/download/v${VERSION}/${a}"
+  echo "[fetch_release_asset] trying $URL" >&2
+  if echo "$a" | grep -qE '\.tar\.gz$'; then
+    if curl -fsSL "$URL" | tar -xz -C "$OUT_DIR" --strip-components=1 2>/dev/null; then
+      echo "[fetch_release_asset] ok $a" >&2
+      exit 0
+    fi
+  elif echo "$a" | grep -qE '\.tar\.xz$'; then
+    if curl -fsSL "$URL" | tar -xJ -C "$OUT_DIR" --strip-components=1 2>/dev/null; then
+      echo "[fetch_release_asset] ok $a" >&2
+      exit 0
+    fi
+  elif echo "$a" | grep -qE '\.zip$'; then
+    TMPDIR=$(mktemp -d)
+    if curl -fsSL "$URL" -o "$TMPDIR/a.zip" && unzip -q "$TMPDIR/a.zip" -d "$TMPDIR" && cp -u "$TMPDIR"/*/* "$OUT_DIR" 2>/dev/null; then
+      rm -rf "$TMPDIR"
+      echo "[fetch_release_asset] ok $a" >&2
+      exit 0
+    fi
+    rm -rf "$TMPDIR" || true
+  else
+    if curl -fsSL "$URL" -o "$OUT_DIR/$(basename "$a")"; then
+      echo "[fetch_release_asset] ok $a" >&2
+      exit 0
+    fi
+  fi
+done
+echo "[fetch_release_asset] none matched for ${REPO} v${VERSION}" >&2
+exit 1
+EOF
+RUN chmod +x /usr/local/bin/fetch_release_asset
+
+# Helper: build a Rust project statically for aarch64 musl
+RUN cat > /usr/local/bin/build_rust_project <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+REPO="$1"
+BIN_NAME="$2"
+TARGET_ARCH="aarch64-unknown-linux-musl"
+OUT_DIR="/build/output/bin"
+
+# Diagnostic helper
+die(){ echo "[build_rust_project] ERROR: $*" >&2; exit 1; }
+
+echo "[build_rust_project] REPO=${REPO} BIN=${BIN_NAME}" >&2
+# Install rustup if needed
+if ! command -v cargo >/dev/null 2>&1; then
+  echo "[build_rust_project] installing rustup..." >&2
+  # Try curl with retries, fall back to wget if curl fails
+  TMP_RUSTUP="/tmp/rustup-init.sh"
+  if ! (curl -fSL --retry 5 --retry-delay 5 --retry-connrefused "https://sh.rustup.rs" -o "$TMP_RUSTUP" 2>/dev/null) && ! (wget -qO "$TMP_RUSTUP" "https://sh.rustup.rs" 2>/dev/null); then
+    echo "[build_rust_project] ERROR: failed to download rustup installer" >&2
+    exit 1
+  fi
+  chmod +x "$TMP_RUSTUP" && sh "$TMP_RUSTUP" -y --no-modify-path && rm -f "$TMP_RUSTUP"
+  # Source cargo env and ensure in PATH
+  if [ -f "$HOME/.cargo/env" ]; then
+    # shellcheck disable=SC1090
+    . "$HOME/.cargo/env"
+  fi
+  export PATH="$HOME/.cargo/bin:${PATH}"
+fi
+
+# Determine toolchain: prefer project-specific rust-toolchain files when present
+TOOLCHAIN="stable"
+if [ -f "rust-toolchain" ]; then
+  TOOLCHAIN=$(sed -n '1p' rust-toolchain | tr -d '[:space:]' || true)
+fi
+if [ -f "rust-toolchain.toml" ]; then
+  CT=$(sed -n "s/^channel *= *\"\(.*\)\".*/\1/p" rust-toolchain.toml || true)
+  if [ -n "$CT" ]; then TOOLCHAIN="$CT"; fi
+fi
+# Install toolchain and ensure components
+echo "[build_rust_project] using toolchain: ${TOOLCHAIN}" >&2
+rustup toolchain install "${TOOLCHAIN}" || true
+# Ensure rust-src (may be needed) and the musl std are present for that toolchain
+rustup component add rust-src --toolchain "${TOOLCHAIN}" || true
+if ! rustup target add "${TARGET_ARCH}" --toolchain "${TOOLCHAIN}"; then
+  rustup target list --installed --toolchain "${TOOLCHAIN}" || true
+  die "failed to add target ${TARGET_ARCH} for toolchain ${TOOLCHAIN}"
+fi
+
+# Show installed targets for debugging
+echo "[build_rust_project] installed targets for ${TOOLCHAIN}:" >&2
+rustup target list --installed --toolchain "${TOOLCHAIN}" || true
+
+# Force cargo to use that toolchain
+export RUSTUP_TOOLCHAIN="${TOOLCHAIN}"
+# Set flags for static musl build
+export RUSTFLAGS='-C target-feature=+crt-static'
+# Prefer aarch64 musl cross-linker if available
+if command -v aarch64-linux-musl-gcc >/dev/null 2>&1; then
+  export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-musl-gcc
+else
+  export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=gcc
+fi
+# Reduce parallelism to avoid OOM/cc1 crashes under QEMU emulation
+export CARGO_BUILD_JOBS=1
+export MAKEFLAGS='-j1'
+# Help pkg-config cross-compilation probes
+export PKG_CONFIG_ALLOW_CROSS=1
+export PKG_CONFIG_PATH="/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig:${PKG_CONFIG_PATH:-}"
+
+TMPDIR=$(mktemp -d)
+trap 'rm -rf "$TMPDIR"' EXIT
+cd "$TMPDIR"
+# Clone repository
+if ! git clone --depth 1 "https://github.com/${REPO}.git" src; then
+  die "git clone failed"
+fi
+cd src
+
+# To speed up debug iterations, set explicit target dir
+export CARGO_TARGET_DIR="/tmp/cargo_target_${BIN_NAME}"
+
+# Prefer cargo install (if project supports it)
+if cargo +"${TOOLCHAIN}" install --locked --root /build --path . --target ${TARGET_ARCH}; then
+  if [ -f "/build/bin/${BIN_NAME}" ]; then
+    cp /build/bin/${BIN_NAME} "${OUT_DIR}/" || true
+    echo "[build_rust_project] installed ${BIN_NAME} via cargo install" >&2
+    exit 0
+  fi
+fi
+
+# Fall back to cargo build (single-job, with a retry on internal compiler errors)
+if cargo +"${TOOLCHAIN}" build --release --target ${TARGET_ARCH}; then
+  BIN_PATH="${CARGO_TARGET_DIR}/${TARGET_ARCH}/release/${BIN_NAME}"
+  if [ -f "$BIN_PATH" ]; then
+    cp "$BIN_PATH" "${OUT_DIR}/" || true
+    echo "[build_rust_project] built ${BIN_NAME} via cargo build" >&2
+    exit 0
+  fi
+else
+  echo "[build_rust_project] initial build failed; checking for internal compiler errors and retrying with stricter single-job flags" >&2 || true
+  # Retry once with explicit single jobs and verbose linker if it looks like cc1 OOM/segfault
+  CARGO_BUILD_JOBS=1 MAKEFLAGS='-j1' cargo +"${TOOLCHAIN}" build --release --target ${TARGET_ARCH} || true
+  BIN_PATH="${CARGO_TARGET_DIR}/${TARGET_ARCH}/release/${BIN_NAME}"
+  if [ -f "$BIN_PATH" ]; then
+    cp "$BIN_PATH" "${OUT_DIR}/" || true
+    echo "[build_rust_project] built ${BIN_NAME} on retry" >&2
+    exit 0
+  fi
+fi
+
+die "failed to build ${REPO}"
+EOF
+RUN chmod +x /usr/local/bin/build_rust_project
+
+
+
+
+
+
+
+
+
+
 
 # -----------------------------------------------------------------------------
 # 下载 CLI 工具
 # -----------------------------------------------------------------------------
 
 # fzf
-RUN --mount=type=secret,id=github_token \
+RUN \
     FZF_VERSION=$(/usr/local/bin/get_version junegunn/fzf | sed 's/v//') && \
     echo "Downloading fzf version: ${FZF_VERSION}" && \
     if [ "${TARGETARCH}" = "arm64" ]; then \
@@ -59,37 +256,63 @@ RUN --mount=type=secret,id=github_token \
     fi
 
 # bat (musl 静态编译)
-RUN --mount=type=secret,id=github_token \
+RUN \
     BAT_VERSION=$(/usr/local/bin/get_version sharkdp/bat | sed 's/v//') && \
     echo "Downloading bat version: ${BAT_VERSION}" && \
     if [ "${TARGETARCH}" = "arm64" ]; then \
-        curl -fsSL "https://github.com/sharkdp/bat/releases/download/v${BAT_VERSION}/bat-v${BAT_VERSION}-aarch64-unknown-linux-gnu.tar.gz" | tar -xz --strip-components=1 -C /build/output/bin --wildcards '*/bat'; \
+        curl -fsSL "https://github.com/sharkdp/bat/releases/download/v${BAT_VERSION}/bat-v${BAT_VERSION}-aarch64-unknown-linux-musl.tar.gz" | tar -xz --strip-components=1 -C /build/output/bin --wildcards '*/bat'; \
     else \
         curl -fsSL "https://github.com/sharkdp/bat/releases/download/v${BAT_VERSION}/bat-v${BAT_VERSION}-x86_64-unknown-linux-musl.tar.gz" | tar -xz --strip-components=1 -C /build/output/bin --wildcards '*/bat'; \
     fi
 
-# eza (ls 增强)
-RUN --mount=type=secret,id=github_token \
-    EZA_VERSION=$(/usr/local/bin/get_version eza-community/eza | sed 's/v//') && \
-    echo "Downloading eza version: ${EZA_VERSION}" && \
+# lsd (ls 增强，替代 eza)
+RUN \
+    LSD_VERSION=$(/usr/local/bin/get_version lsd-rs/lsd | sed 's/v//') && \
+    echo "Downloading lsd version: ${LSD_VERSION}" && \
     if [ "${TARGETARCH}" = "arm64" ]; then \
-        curl -fsSL "https://github.com/eza-community/eza/releases/download/v${EZA_VERSION}/eza_aarch64-unknown-linux-gnu.tar.gz" | tar -xz -C /build/output/bin; \
+        if ! /usr/local/bin/fetch_release_asset lsd-rs/lsd "${LSD_VERSION}" /build/output/bin \
+            "lsd-v${LSD_VERSION}-aarch64-unknown-linux-musl.tar.gz" \
+            "lsd-v${LSD_VERSION}-aarch64-musl.tar.gz" \
+            "lsd-${LSD_VERSION}-aarch64-unknown-linux-musl.tar.gz" \
+            "lsd-${LSD_VERSION}-aarch64.tar.gz" \
+            "lsd_${LSD_VERSION}_linux_arm64.tar.gz"; then \
+            echo "[lsd] prebuilt assets missing, building from source" >&2 && \
+            /usr/local/bin/build_rust_project lsd-rs/lsd lsd; \
+        fi; \
     else \
-        curl -fsSL "https://github.com/eza-community/eza/releases/download/v${EZA_VERSION}/eza_x86_64-unknown-linux-musl.tar.gz" | tar -xz -C /build/output/bin; \
+        if ! /usr/local/bin/fetch_release_asset lsd-rs/lsd "${LSD_VERSION}" /build/output/bin \
+            "lsd-v${LSD_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+            "lsd-v${LSD_VERSION}-x86_64-musl.tar.gz" \
+            "lsd-${LSD_VERSION}-x86_64.tar.gz" \
+            "lsd_${LSD_VERSION}_linux_amd64.tar.gz"; then \
+            echo "[lsd] x86_64 asset missing, building from source" >&2 && \
+            /usr/local/bin/build_rust_project lsd-rs/lsd lsd; \
+        fi; \
     fi
 
 # ripgrep (版本号无 v 前缀，x86_64 使用 musl)
-RUN --mount=type=secret,id=github_token \
+RUN \
     RG_VERSION=$(/usr/local/bin/get_version BurntSushi/ripgrep) && \
     echo "Downloading ripgrep version: ${RG_VERSION}" && \
     if [ "${TARGETARCH}" = "arm64" ]; then \
-        curl -fsSL "https://github.com/BurntSushi/ripgrep/releases/download/${RG_VERSION}/ripgrep-${RG_VERSION}-aarch64-unknown-linux-gnu.tar.gz" | tar -xz --strip-components=1 -C /build/output/bin --wildcards '*/rg'; \
+        if ! /usr/local/bin/fetch_release_asset BurntSushi/ripgrep "${RG_VERSION}" /build/output/bin \
+            "ripgrep-${RG_VERSION}-aarch64-unknown-linux-musl.tar.gz" \
+            "ripgrep-${RG_VERSION}-aarch64.tar.gz" \
+            "ripgrep-${RG_VERSION}-arm64-unknown-linux-musl.tar.gz" \
+            "ripgrep-${RG_VERSION}-linux-aarch64.tar.gz" \
+            "ripgrep-${RG_VERSION}-aarch64-unknown-linux-gnu.tar.gz"; then \
+            echo "[ripgrep] prebuilt assets missing, building from source" >&2 && \
+            /usr/local/bin/build_rust_project BurntSushi/ripgrep rg; \
+        fi; \
     else \
-        curl -fsSL "https://github.com/BurntSushi/ripgrep/releases/download/${RG_VERSION}/ripgrep-${RG_VERSION}-x86_64-unknown-linux-musl.tar.gz" | tar -xz --strip-components=1 -C /build/output/bin --wildcards '*/rg'; \
+        if ! /usr/local/bin/fetch_release_asset BurntSushi/ripgrep "${RG_VERSION}" /build/output/bin "ripgrep-${RG_VERSION}-x86_64-unknown-linux-musl.tar.gz"; then \
+            echo "[ripgrep] x86_64 asset missing, building from source" >&2 && \
+            /usr/local/bin/build_rust_project BurntSushi/ripgrep rg; \
+        fi; \
     fi
 
 # fd (musl 静态编译)
-RUN --mount=type=secret,id=github_token \
+RUN \
     FD_VERSION=$(/usr/local/bin/get_version sharkdp/fd | sed 's/v//') && \
     echo "Downloading fd version: ${FD_VERSION}" && \
     mkdir -p /tmp/fd && \
@@ -102,17 +325,28 @@ RUN --mount=type=secret,id=github_token \
     fi && rm -rf /tmp/fd
 
 # delta (git diff 增强, musl 静态编译，版本号无 v 前缀)
-RUN --mount=type=secret,id=github_token \
+RUN \
     DELTA_VERSION=$(/usr/local/bin/get_version dandavison/delta) && \
     echo "Downloading delta version: ${DELTA_VERSION}" && \
     if [ "${TARGETARCH}" = "arm64" ]; then \
-        curl -fsSL "https://github.com/dandavison/delta/releases/download/${DELTA_VERSION}/delta-${DELTA_VERSION}-aarch64-unknown-linux-gnu.tar.gz" | tar -xz --strip-components=1 -C /build/output/bin --wildcards '*/delta'; \
+        if ! /usr/local/bin/fetch_release_asset dandavison/delta "${DELTA_VERSION}" /build/output/bin \
+            "delta-${DELTA_VERSION}-aarch64-unknown-linux-musl.tar.gz" \
+            "delta-${DELTA_VERSION}-aarch64.tar.gz" \
+            "delta-${DELTA_VERSION}-arm64-unknown-linux-musl.tar.gz" \
+            "delta-${DELTA_VERSION}-aarch64-unknown-linux-gnu.tar.gz" \
+            "delta-${DELTA_VERSION}-linux-aarch64.tar.gz"; then \
+            echo "[delta] prebuilt assets missing, building from source" >&2 && \
+            /usr/local/bin/build_rust_project dandavison/delta delta; \
+        fi; \
     else \
-        curl -fsSL "https://github.com/dandavison/delta/releases/download/${DELTA_VERSION}/delta-${DELTA_VERSION}-x86_64-unknown-linux-musl.tar.gz" | tar -xz --strip-components=1 -C /build/output/bin --wildcards '*/delta'; \
+        if ! /usr/local/bin/fetch_release_asset dandavison/delta "${DELTA_VERSION}" /build/output/bin "delta-${DELTA_VERSION}-x86_64-unknown-linux-musl.tar.gz"; then \
+            echo "[delta] x86_64 asset missing, building from source" >&2 && \
+            /usr/local/bin/build_rust_project dandavison/delta delta; \
+        fi; \
     fi
 
 # lazygit
-RUN --mount=type=secret,id=github_token \
+RUN \
     LAZYGIT_VERSION=$(/usr/local/bin/get_version jesseduffield/lazygit | sed 's/v//') && \
     echo "Downloading lazygit version: ${LAZYGIT_VERSION}" && \
     if [ "${TARGETARCH}" = "arm64" ]; then \
@@ -122,7 +356,7 @@ RUN --mount=type=secret,id=github_token \
     fi
 
 # lazysql
-RUN --mount=type=secret,id=github_token \
+RUN \
     LAZYSQL_VERSION=$(/usr/local/bin/get_version jorgerojas26/lazysql | sed 's/^v//') && \
     echo "Downloading lazysql version: ${LAZYSQL_VERSION}" && \
     mkdir -p /tmp/lazysql && \
@@ -135,7 +369,7 @@ RUN --mount=type=secret,id=github_token \
     rm -rf /tmp/lazysql
 
 # aichat
-RUN --mount=type=secret,id=github_token \
+RUN \
     AICHAT_VERSION=$(/usr/local/bin/get_version sigoden/aichat) && \
     echo "Downloading aichat version: ${AICHAT_VERSION}" && \
     mkdir -p /tmp/aichat && \
@@ -148,7 +382,7 @@ RUN --mount=type=secret,id=github_token \
     rm -rf /tmp/aichat
 
 # tuios
-RUN --mount=type=secret,id=github_token \
+RUN \
     TUIOS_VERSION=$(/usr/local/bin/get_version Gaurav-Gosain/tuios | sed 's/^v//') && \
     echo "Downloading tuios version: ${TUIOS_VERSION}" && \
     mkdir -p /tmp/tuios && \
@@ -161,7 +395,7 @@ RUN --mount=type=secret,id=github_token \
     rm -rf /tmp/tuios
 
 # Vim (静态编译)
-RUN --mount=type=secret,id=github_token \
+RUN \
     VIM_VERSION=$(/usr/local/bin/get_version vim/vim | sed 's/v//') && \
     echo "Building vim version: ${VIM_VERSION}" && \
     git clone --depth 1 --branch "v${VIM_VERSION}" https://github.com/vim/vim.git /tmp/vim && \
@@ -256,7 +490,7 @@ RUN git clone --depth 1 https://github.com/amix/vimrc.git /build/output/vim_runt
         /build/output/vim_runtime/install_awesome_parameterized.sh
 
 # zoxide
-RUN --mount=type=secret,id=github_token \
+RUN \
     ZOXIDE_VERSION=$(/usr/local/bin/get_version ajeetdsouza/zoxide | sed 's/v//') && \
     echo "Downloading zoxide version: ${ZOXIDE_VERSION}" && \
     if [ "${TARGETARCH}" = "arm64" ]; then \
@@ -266,7 +500,7 @@ RUN --mount=type=secret,id=github_token \
     fi
 
 # dust (du 的现代替代, 磁盘使用分析)
-RUN --mount=type=secret,id=github_token \
+RUN \
     DUST_VERSION=$(/usr/local/bin/get_version bootandy/dust | sed 's/v//') && \
     echo "Downloading dust version: ${DUST_VERSION}" && \
     if [ "${TARGETARCH}" = "arm64" ]; then \
@@ -276,7 +510,7 @@ RUN --mount=type=secret,id=github_token \
     fi
 
 # bottom (btm, 系统监控工具, top/htop 的现代替代)
-RUN --mount=type=secret,id=github_token \
+RUN \
     BTM_VERSION=$(/usr/local/bin/get_version ClementTsang/bottom) && \
     echo "Downloading bottom version: ${BTM_VERSION}" && \
     if [ "${TARGETARCH}" = "arm64" ]; then \
@@ -286,7 +520,7 @@ RUN --mount=type=secret,id=github_token \
     fi
 
 # procs (ps 的现代替代, 进程查看)
-RUN --mount=type=secret,id=github_token \
+RUN \
     PROCS_VERSION=$(/usr/local/bin/get_version dalance/procs | sed 's/v//') && \
     echo "Downloading procs version: ${PROCS_VERSION}" && \
     mkdir -p /tmp/procs && \
@@ -301,7 +535,7 @@ RUN --mount=type=secret,id=github_token \
     fi && rm -rf /tmp/procs
 
 # sd (sed 的现代替代, 搜索替换)
-RUN --mount=type=secret,id=github_token \
+RUN \
     SD_VERSION=$(/usr/local/bin/get_version chmln/sd | sed 's/v//') && \
     echo "Downloading sd version: ${SD_VERSION}" && \
     if [ "${TARGETARCH}" = "arm64" ]; then \
@@ -309,26 +543,32 @@ RUN --mount=type=secret,id=github_token \
     else \
         curl -fsSL "https://github.com/chmln/sd/releases/download/v${SD_VERSION}/sd-v${SD_VERSION}-x86_64-unknown-linux-musl.tar.gz" | tar -xz --strip-components=1 -C /build/output/bin --wildcards '*/sd'; \
     fi
-RUN --mount=type=secret,id=github_token \
+RUN \
     HYPERFINE_VERSION=$(/usr/local/bin/get_version sharkdp/hyperfine | sed 's/v//') && \
     echo "Downloading hyperfine version: ${HYPERFINE_VERSION}" && \
     if [ "${TARGETARCH}" = "arm64" ]; then \
-        curl -fsSL "https://github.com/sharkdp/hyperfine/releases/download/v${HYPERFINE_VERSION}/hyperfine-v${HYPERFINE_VERSION}-aarch64-unknown-linux-gnu.tar.gz" | tar -xz --strip-components=1 -C /build/output/bin --wildcards '*/hyperfine'; \
+        curl -fsSL "https://github.com/sharkdp/hyperfine/releases/download/v${HYPERFINE_VERSION}/hyperfine-v${HYPERFINE_VERSION}-aarch64-unknown-linux-musl.tar.gz" | tar -xz --strip-components=1 -C /build/output/bin --wildcards '*/hyperfine'; \
     else \
         curl -fsSL "https://github.com/sharkdp/hyperfine/releases/download/v${HYPERFINE_VERSION}/hyperfine-v${HYPERFINE_VERSION}-x86_64-unknown-linux-musl.tar.gz" | tar -xz --strip-components=1 -C /build/output/bin --wildcards '*/hyperfine'; \
     fi
 
-# tokei (代码统计工具, 使用 v13.0.0-alpha.0 因为最新版无预编译二进制)
-RUN TOKEI_VERSION="13.0.0-alpha.0" && \
+# tokei (代码统计工具, 使用动态版本获取最新)
+RUN \
+    TOKEI_VERSION=$(/usr/local/bin/get_version XAMPPRocky/tokei | sed 's/v//') && \
+    echo "Downloading tokei version: ${TOKEI_VERSION}" && \
     if [ "${TARGETARCH}" = "arm64" ]; then \
-        curl -fsSL "https://github.com/XAMPPRocky/tokei/releases/download/v${TOKEI_VERSION}/tokei-aarch64-unknown-linux-gnu.tar.gz" | tar -xz -C /build/output/bin tokei; \
+        for a in "tokei-${TOKEI_VERSION}-aarch64-unknown-linux-musl.tar.gz" "tokei-aarch64-unknown-linux-musl.tar.gz" "tokei-${TOKEI_VERSION}-aarch64.tar.gz"; do \
+            if curl -fsSL "https://github.com/XAMPPRocky/tokei/releases/download/v${TOKEI_VERSION}/${a}" | tar -xz -C /build/output/bin tokei; then break; fi; \
+        done; \
     else \
-        curl -fsSL "https://github.com/XAMPPRocky/tokei/releases/download/v${TOKEI_VERSION}/tokei-x86_64-unknown-linux-musl.tar.gz" | tar -xz -C /build/output/bin tokei; \
+        for a in "tokei-${TOKEI_VERSION}-x86_64-unknown-linux-musl.tar.gz" "tokei-x86_64-unknown-linux-musl.tar.gz" "tokei-${TOKEI_VERSION}-x86_64.tar.gz"; do \
+            if curl -fsSL "https://github.com/XAMPPRocky/tokei/releases/download/v${TOKEI_VERSION}/${a}" | tar -xz -C /build/output/bin tokei; then break; fi; \
+        done; \
     fi
 
 
 # duf (df 的现代替代, 磁盘空间查看)
-RUN --mount=type=secret,id=github_token \
+RUN \
     DUF_VERSION=$(/usr/local/bin/get_version muesli/duf | sed 's/v//') && \
     echo "Downloading duf version: ${DUF_VERSION}" && \
     mkdir -p /tmp/duf && \
@@ -341,7 +581,7 @@ RUN --mount=type=secret,id=github_token \
     fi && rm -rf /tmp/duf
 
 # jq (JSON 处理工具)
-RUN --mount=type=secret,id=github_token \
+RUN \
     JQ_VERSION=$(/usr/local/bin/get_version jqlang/jq | sed 's/jq-//') && \
     echo "Downloading jq version: ${JQ_VERSION}" && \
     if [ "${TARGETARCH}" = "arm64" ]; then \
@@ -351,7 +591,7 @@ RUN --mount=type=secret,id=github_token \
     fi && chmod +x /build/output/bin/jq
 
 # yq (YAML 处理工具)
-RUN --mount=type=secret,id=github_token \
+RUN \
     YQ_VERSION=$(/usr/local/bin/get_version mikefarah/yq | sed 's/v//') && \
     echo "Downloading yq version: ${YQ_VERSION}" && \
     if [ "${TARGETARCH}" = "arm64" ]; then \
@@ -361,7 +601,7 @@ RUN --mount=type=secret,id=github_token \
     fi && chmod +x /build/output/bin/yq
 
 # glow (终端 Markdown 渲染)
-RUN --mount=type=secret,id=github_token \
+RUN \
     GLOW_VERSION=$(/usr/local/bin/get_version charmbracelet/glow | sed 's/v//') && \
     echo "Downloading glow version: ${GLOW_VERSION}" && \
     if [ "${TARGETARCH}" = "arm64" ]; then \
@@ -371,7 +611,7 @@ RUN --mount=type=secret,id=github_token \
     fi
 
 # yazi (终端文件管理器, 非常快)
-RUN --mount=type=secret,id=github_token \
+RUN \
     YAZI_VERSION=$(/usr/local/bin/get_version sxyazi/yazi | sed 's/v//') && \
     echo "Downloading yazi version: ${YAZI_VERSION}" && \
     mkdir -p /tmp/yazi && \
@@ -385,7 +625,7 @@ RUN --mount=type=secret,id=github_token \
     rm -rf /tmp/yazi
 
 # zellij (终端复用器, 现代 tmux 替代)
-RUN --mount=type=secret,id=github_token \
+RUN \
     ZELLIJ_VERSION=$(/usr/local/bin/get_version zellij-org/zellij | sed 's/v//') && \
     echo "Downloading zellij version: ${ZELLIJ_VERSION}" && \
     mkdir -p /tmp/zellij && \
@@ -398,7 +638,7 @@ RUN --mount=type=secret,id=github_token \
     rm -rf /tmp/zellij
 
 # atuin (Shell 历史搜索和同步)
-RUN --mount=type=secret,id=github_token \
+RUN \
     ATUIN_VERSION=$(/usr/local/bin/get_version atuinsh/atuin | sed 's/v//') && \
     echo "Downloading atuin version: ${ATUIN_VERSION}" && \
     mkdir -p /tmp/atuin && \
@@ -411,12 +651,12 @@ RUN --mount=type=secret,id=github_token \
     rm -rf /tmp/atuin
 
 # navi (交互式命令 cheatsheet)
-RUN --mount=type=secret,id=github_token \
+RUN \
     NAVI_VERSION=$(/usr/local/bin/get_version denisidoro/navi | sed 's/v//') && \
     echo "Downloading navi version: ${NAVI_VERSION}" && \
     mkdir -p /tmp/navi && \
     if [ "${TARGETARCH}" = "arm64" ]; then \
-        curl -fsSL "https://github.com/denisidoro/navi/releases/download/v${NAVI_VERSION}/navi-v${NAVI_VERSION}-aarch64-unknown-linux-gnu.tar.gz" | tar -xz -C /tmp/navi; \
+        curl -fsSL "https://github.com/denisidoro/navi/releases/download/v${NAVI_VERSION}/navi-v${NAVI_VERSION}-aarch64-unknown-linux-musl.tar.gz" | tar -xz -C /tmp/navi; \
     else \
         curl -fsSL "https://github.com/denisidoro/navi/releases/download/v${NAVI_VERSION}/navi-v${NAVI_VERSION}-x86_64-unknown-linux-musl.tar.gz" | tar -xz -C /tmp/navi; \
     fi && \
@@ -424,7 +664,7 @@ RUN --mount=type=secret,id=github_token \
     rm -rf /tmp/navi
 
 # ouch (通用解压缩工具)
-RUN --mount=type=secret,id=github_token \
+RUN \
     OUCH_VERSION=$(/usr/local/bin/get_version ouch-org/ouch) && \
     echo "Downloading ouch version: ${OUCH_VERSION}" && \
     mkdir -p /tmp/ouch && \
@@ -437,7 +677,7 @@ RUN --mount=type=secret,id=github_token \
     rm -rf /tmp/ouch
 
 # grex (从示例生成正则表达式)
-RUN --mount=type=secret,id=github_token \
+RUN \
     GREX_VERSION=$(/usr/local/bin/get_version pemistahl/grex | sed 's/v//') && \
     echo "Downloading grex version: ${GREX_VERSION}" && \
     mkdir -p /tmp/grex && \
@@ -454,7 +694,7 @@ RUN --mount=type=secret,id=github_token \
 # -----------------------------------------------------------------------------
 
 # ruff (Python linter + formatter, 超快速, musl 静态编译)
-RUN --mount=type=secret,id=github_token \
+RUN \
     RUFF_VERSION=$(/usr/local/bin/get_version astral-sh/ruff) && \
     echo "Downloading ruff version: ${RUFF_VERSION}" && \
     if [ "${TARGETARCH}" = "arm64" ]; then \
@@ -464,7 +704,7 @@ RUN --mount=type=secret,id=github_token \
     fi
 
 # shfmt (Shell/Bash 格式化工具)
-RUN --mount=type=secret,id=github_token \
+RUN \
     SHFMT_VERSION=$(/usr/local/bin/get_version mvdan/sh) && \
     echo "Downloading shfmt version: ${SHFMT_VERSION}" && \
     if [ "${TARGETARCH}" = "arm64" ]; then \
@@ -474,7 +714,7 @@ RUN --mount=type=secret,id=github_token \
     fi && chmod +x /build/output/bin/shfmt
 
 # stylua (Lua 格式化工具, musl 静态编译)
-RUN --mount=type=secret,id=github_token \
+RUN \
     STYLUA_VERSION=$(/usr/local/bin/get_version JohnnyMorganz/StyLua) && \
     echo "Downloading stylua version: ${STYLUA_VERSION}" && \
     mkdir -p /tmp/stylua && \
@@ -495,7 +735,7 @@ RUN git clone --depth 1 https://github.com/thomasrussellmurphy/istyle-verilog-fo
 
 # uv (Python 包管理器, 超快速, musl 静态编译)
 # uv 版本格式不带 v 前缀，直接是版本号如 0.9.25
-RUN --mount=type=secret,id=github_token \
+RUN \
     UV_VERSION=$(/usr/local/bin/get_version astral-sh/uv | sed 's/^v//') && \
     echo "Downloading uv version: ${UV_VERSION}" && \
     mkdir -p /tmp/uv && \
@@ -557,7 +797,7 @@ RUN git clone --depth 1 https://github.com/junegunn/fzf.git /tmp/fzf && \
 # -----------------------------------------------------------------------------
 # 下载字体 (Nerd Fonts) - 只保留 Regular 字体节省空间
 # -----------------------------------------------------------------------------
-RUN --mount=type=secret,id=github_token \
+RUN \
     FONT_VERSION=$(/usr/local/bin/get_version ryanoasis/nerd-fonts) && \
     echo "Downloading fonts version: ${FONT_VERSION}" && \
     mkdir -p /tmp/fonts && \
@@ -570,7 +810,7 @@ RUN --mount=type=secret,id=github_token \
 # -----------------------------------------------------------------------------
 # 使用 UPX 压缩二进制文件节省空间
 # -----------------------------------------------------------------------------
-RUN --mount=type=secret,id=github_token \
+RUN \
     UPX_VERSION=$(/usr/local/bin/get_version upx/upx | sed 's/^v//') && \
     echo "Downloading UPX version: ${UPX_VERSION}" && \
     mkdir -p /tmp/upx && \
@@ -598,7 +838,22 @@ RUN chmod +x /build/output/bin/*
 RUN echo "=== Downloaded Tools ===" && \
     ls -la /build/output/bin/ && \
     echo "=== Zimfw Modules ===" && \
-    ls -la /build/output/cache/zim/modules/
+    ls -la /build/output/cache/zim/modules/ && \
+    echo "" && \
+    echo "=== 静态编译验证 ===" && \
+    echo "检查需要验证的二进制文件编译方式:" && \
+    for binary in jq yq shfmt glow duf; do \
+        if [ -f "/build/output/bin/$binary" ]; then \
+            echo ""; \
+            echo ">>> $binary:"; \
+            file "/build/output/bin/$binary" || true; \
+            echo "   ldd 检查:"; \
+            ldd "/build/output/bin/$binary" 2>&1 | head -3 || echo "   (静态编译或无法检查)"; \
+        fi; \
+    done && \
+    echo "" && \
+    echo ">>> vim:"; \
+    file "/build/output/vim/bin/vim" || true;
 
 # -----------------------------------------------------------------------------
 # 复制配置文件和安装脚本
