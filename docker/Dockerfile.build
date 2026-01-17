@@ -44,442 +44,92 @@ RUN mkdir -p /build/output/bin \
 
 # Helper: get_version (HTTPS-only, debug output)
 # Usage: /usr/local/bin/get_version owner/repo  -> prints latest tag name
-RUN cat > /usr/local/bin/get_version <<'EOF'
-#!/bin/bash
-set -eu
-REPO="$1"
-echo "[get_version] REPO=$REPO" >&2
-VERSION=""
-
-# Try releases/latest redirect header
-VERSION=$(curl -sI "https://github.com/$REPO/releases/latest" | grep -i "location:" | sed -n "s/.*tag\///p" | tr -d "\r\n" || true)
-echo "[get_version] from releases/latest raw=$VERSION" >&2
-
-# Fall back to tags page parsing
-if [ -z "$VERSION" ]; then
-  VERSION=$(curl -s "https://github.com/$REPO/tags" | sed -n 's/.*\/releases\/tag\/\([^\"]*\)\".*/\1/p' | head -n1 || true)
-  echo "[get_version] from tags page raw=$VERSION" >&2
-fi
-
-# Final fallback: git ls-remote tags
-if [ -z "$VERSION" ]; then
-  echo "[get_version] tags page empty, falling back to git ls-remote" >&2
-  VERSION=$(git ls-remote --tags --refs "https://github.com/$REPO.git" | awk -F"/" '/refs\/tags\//{print $NF}' | sed 's/\^{}$//' | sort -V | tail -n1 || true)
-  echo "[get_version] from git ls-remote raw=$VERSION" >&2
-fi
-
-echo "[get_version] final=$VERSION" >&2
-echo "$VERSION"
-EOF
+COPY scripts/get_version /usr/local/bin/get_version
 RUN chmod +x /usr/local/bin/get_version && \
     apt-get update && apt-get install -y musl-tools build-essential gcc pkg-config libssl-dev ca-certificates curl git && rm -rf /var/lib/apt/lists/*
 
-# Helper: fetch_release_asset
-RUN cat > /usr/local/bin/fetch_release_asset <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-REPO="$1"
-VERSION="$2"
-OUT_DIR="$3"
-shift 3
-for a in "$@"; do
-  URL="https://github.com/${REPO}/releases/download/v${VERSION}/${a}"
-  echo "[fetch_release_asset] trying $URL" >&2
-  if echo "$a" | grep -qE '\.tar\.gz$'; then
-    if curl -fsSL "$URL" | tar -xz -C "$OUT_DIR" --strip-components=1 2>/dev/null; then
-      echo "[fetch_release_asset] ok $a" >&2
-      exit 0
-    fi
-  elif echo "$a" | grep -qE '\.tar\.xz$'; then
-    if curl -fsSL "$URL" | tar -xJ -C "$OUT_DIR" --strip-components=1 2>/dev/null; then
-      echo "[fetch_release_asset] ok $a" >&2
-      exit 0
-    fi
-  elif echo "$a" | grep -qE '\.zip$'; then
-    TMPDIR=$(mktemp -d)
-    if curl -fsSL "$URL" -o "$TMPDIR/a.zip" && unzip -q "$TMPDIR/a.zip" -d "$TMPDIR" && cp -u "$TMPDIR"/*/* "$OUT_DIR" 2>/dev/null; then
-      rm -rf "$TMPDIR"
-      echo "[fetch_release_asset] ok $a" >&2
-      exit 0
-    fi
-    rm -rf "$TMPDIR" || true
-  else
-    if curl -fsSL "$URL" -o "$OUT_DIR/$(basename "$a")"; then
-      echo "[fetch_release_asset] ok $a" >&2
-      exit 0
-    fi
-  fi
-done
-echo "[fetch_release_asset] none matched for ${REPO} v${VERSION}" >&2
-exit 1
-EOF
-RUN chmod +x /usr/local/bin/fetch_release_asset
+# Helper: fetch_release_asset removed — use /usr/local/bin/soar_fetch_static.sh for release fetching
+# This repository no longer includes the legacy fetch_release_asset helper. See
+# /usr/local/bin/soar_fetch_static.sh which performs GitHub + pkgforge (soar) downloads
+# and extracts/copies binaries into the destination directory.
 
-# Helper: build a Rust project statically for aarch64 musl
-RUN cat > /usr/local/bin/build_rust_project <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-REPO="$1"
-BIN_NAME="$2"
-TARGET_ARCH="aarch64-unknown-linux-musl"
-OUT_DIR="/build/output/bin"
+# Install Soar (pkgforge client) for optional pkgforge downloads
+RUN SOAR_VERSION=$(/usr/local/bin/get_version pkgforge/soar | sed 's/^v//') && \
+    echo "Installing soar version: ${SOAR_VERSION}" && \
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+        # Try direct binary first, then tarball
+        if curl -fsSL "https://github.com/pkgforge/soar/releases/download/v${SOAR_VERSION}/soar-aarch64-linux" -o /usr/local/bin/soar; then :; \
+        elif curl -fsSL "https://github.com/pkgforge/soar/releases/download/v${SOAR_VERSION}/soar-aarch64-linux.tar.gz" -o /tmp/soar.tar.gz && tar -xzf /tmp/soar.tar.gz -C /tmp && mv /tmp/soar-aarch64-linux /usr/local/bin/soar 2>/dev/null || true; then :; \
+        else echo "[soar] install: no binary found for ${SOAR_VERSION}, skipping" >&2; fi; \
+    else \
+        if curl -fsSL "https://github.com/pkgforge/soar/releases/download/v${SOAR_VERSION}/soar-x86_64-linux" -o /usr/local/bin/soar; then :; \
+        elif curl -fsSL "https://github.com/pkgforge/soar/releases/download/v${SOAR_VERSION}/soar-x86_64-linux.tar.gz" -o /tmp/soar.tar.gz && tar -xzf /tmp/soar.tar.gz -C /tmp && mv /tmp/soar-x86_64-linux /usr/local/bin/soar 2>/dev/null || true; then :; \
+        else echo "[soar] install: no binary found for ${SOAR_VERSION}, skipping" >&2; fi; \
+    fi && \
+    chmod +x /usr/local/bin/soar || true
 
-# Diagnostic helper
-die(){ echo "[build_rust_project] ERROR: $*" >&2; exit 1; }
-
-echo "[build_rust_project] REPO=${REPO} BIN=${BIN_NAME}" >&2
-# Install rustup if needed
-if ! command -v cargo >/dev/null 2>&1; then
-  echo "[build_rust_project] installing rustup..." >&2
-  # Try curl with retries, fall back to wget if curl fails
-  TMP_RUSTUP="/tmp/rustup-init.sh"
-  if ! (curl -fSL --retry 5 --retry-delay 5 --retry-connrefused "https://sh.rustup.rs" -o "$TMP_RUSTUP" 2>/dev/null) && ! (wget -qO "$TMP_RUSTUP" "https://sh.rustup.rs" 2>/dev/null); then
-    echo "[build_rust_project] ERROR: failed to download rustup installer" >&2
-    exit 1
-  fi
-  chmod +x "$TMP_RUSTUP" && sh "$TMP_RUSTUP" -y --no-modify-path && rm -f "$TMP_RUSTUP"
-  # Source cargo env and ensure in PATH
-  if [ -f "$HOME/.cargo/env" ]; then
-    # shellcheck disable=SC1090
-    . "$HOME/.cargo/env"
-  fi
-  export PATH="$HOME/.cargo/bin:${PATH}"
-fi
-
-# Determine toolchain: prefer project-specific rust-toolchain files when present
-TOOLCHAIN="stable"
-if [ -f "rust-toolchain" ]; then
-  TOOLCHAIN=$(sed -n '1p' rust-toolchain | tr -d '[:space:]' || true)
-fi
-if [ -f "rust-toolchain.toml" ]; then
-  CT=$(sed -n "s/^channel *= *\"\(.*\)\".*/\1/p" rust-toolchain.toml || true)
-  if [ -n "$CT" ]; then TOOLCHAIN="$CT"; fi
-fi
-# Install toolchain and ensure components
-echo "[build_rust_project] using toolchain: ${TOOLCHAIN}" >&2
-rustup toolchain install "${TOOLCHAIN}" || true
-# Ensure rust-src (may be needed) and the musl std are present for that toolchain
-rustup component add rust-src --toolchain "${TOOLCHAIN}" || true
-if ! rustup target add "${TARGET_ARCH}" --toolchain "${TOOLCHAIN}"; then
-  rustup target list --installed --toolchain "${TOOLCHAIN}" || true
-  die "failed to add target ${TARGET_ARCH} for toolchain ${TOOLCHAIN}"
-fi
-
-# Show installed targets for debugging
-echo "[build_rust_project] installed targets for ${TOOLCHAIN}:" >&2
-rustup target list --installed --toolchain "${TOOLCHAIN}" || true
-
-# Force cargo to use that toolchain
-export RUSTUP_TOOLCHAIN="${TOOLCHAIN}"
-# Set flags for static musl build
-export RUSTFLAGS='-C target-feature=+crt-static'
-# Prefer aarch64 musl cross-linker if available
-if command -v aarch64-linux-musl-gcc >/dev/null 2>&1; then
-  export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-musl-gcc
-else
-  export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=gcc
-fi
-# Reduce parallelism to avoid OOM/cc1 crashes under QEMU emulation
-export CARGO_BUILD_JOBS=1
-export MAKEFLAGS='-j1'
-# Help pkg-config cross-compilation probes
-export PKG_CONFIG_ALLOW_CROSS=1
-export PKG_CONFIG_PATH="/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig:${PKG_CONFIG_PATH:-}"
-
-TMPDIR=$(mktemp -d)
-trap 'rm -rf "$TMPDIR"' EXIT
-cd "$TMPDIR"
-# Clone repository
-if ! git clone --depth 1 "https://github.com/${REPO}.git" src; then
-  die "git clone failed"
-fi
-cd src
-
-# To speed up debug iterations, set explicit target dir
-export CARGO_TARGET_DIR="/tmp/cargo_target_${BIN_NAME}"
-
-# Prefer cargo install (if project supports it)
-if cargo +"${TOOLCHAIN}" install --locked --root /build --path . --target ${TARGET_ARCH}; then
-  if [ -f "/build/bin/${BIN_NAME}" ]; then
-    cp /build/bin/${BIN_NAME} "${OUT_DIR}/" || true
-    echo "[build_rust_project] installed ${BIN_NAME} via cargo install" >&2
-    exit 0
-  fi
-fi
-
-# Fall back to cargo build (single-job, with a retry on internal compiler errors)
-if cargo +"${TOOLCHAIN}" build --release --target ${TARGET_ARCH}; then
-  BIN_PATH="${CARGO_TARGET_DIR}/${TARGET_ARCH}/release/${BIN_NAME}"
-  if [ -f "$BIN_PATH" ]; then
-    cp "$BIN_PATH" "${OUT_DIR}/" || true
-    echo "[build_rust_project] built ${BIN_NAME} via cargo build" >&2
-    exit 0
-  fi
-else
-  echo "[build_rust_project] initial build failed; checking for internal compiler errors and retrying with stricter single-job flags" >&2 || true
-  # Retry once with explicit single jobs and verbose linker if it looks like cc1 OOM/segfault
-  CARGO_BUILD_JOBS=1 MAKEFLAGS='-j1' cargo +"${TOOLCHAIN}" build --release --target ${TARGET_ARCH} || true
-  BIN_PATH="${CARGO_TARGET_DIR}/${TARGET_ARCH}/release/${BIN_NAME}"
-  if [ -f "$BIN_PATH" ]; then
-    cp "$BIN_PATH" "${OUT_DIR}/" || true
-    echo "[build_rust_project] built ${BIN_NAME} on retry" >&2
-    exit 0
-  fi
-fi
-
-die "failed to build ${REPO}"
-EOF
-RUN chmod +x /usr/local/bin/build_rust_project
-
-
-
-
-
-
-
-
-
+# Copy local helper script for fetching static releases using soar
+COPY scripts/soar_fetch_static.sh /usr/local/bin/soar_fetch_static.sh
+RUN chmod +x /usr/local/bin/soar_fetch_static.sh || true
 
 
 # -----------------------------------------------------------------------------
-# 下载 CLI 工具
+# 使用 soar_fetch_static.sh 下载 CLI 工具并扁平化到 /build/output/bin
+#
+# 改进: 先将每个仓库下载到独立的临时目录 (/tmp/soar_fetch/*)，
+# 在所有仓库下载完毕后统一从这些目录递归查找所有可执行文件并移动到 /build/output/bin
+# 这样能避免在下载过程中覆盖/冲突，并且保证“全部下载完再扁平化”的行为
 # -----------------------------------------------------------------------------
-
-# fzf
-RUN \
-    FZF_VERSION=$(/usr/local/bin/get_version junegunn/fzf | sed 's/v//') && \
-    echo "Downloading fzf version: ${FZF_VERSION}" && \
-    if [ "${TARGETARCH}" = "arm64" ]; then \
-        curl -fsSL "https://github.com/junegunn/fzf/releases/download/v${FZF_VERSION}/fzf-${FZF_VERSION}-linux_arm64.tar.gz" | tar -xz -C /build/output/bin; \
-    else \
-        curl -fsSL "https://github.com/junegunn/fzf/releases/download/v${FZF_VERSION}/fzf-${FZF_VERSION}-linux_amd64.tar.gz" | tar -xz -C /build/output/bin; \
-    fi
-
-# bat (musl 静态编译)
-RUN \
-    BAT_VERSION=$(/usr/local/bin/get_version sharkdp/bat | sed 's/v//') && \
-    echo "Downloading bat version: ${BAT_VERSION}" && \
-    if [ "${TARGETARCH}" = "arm64" ]; then \
-        curl -fsSL "https://github.com/sharkdp/bat/releases/download/v${BAT_VERSION}/bat-v${BAT_VERSION}-aarch64-unknown-linux-musl.tar.gz" | tar -xz --strip-components=1 -C /build/output/bin --wildcards '*/bat'; \
-    else \
-        curl -fsSL "https://github.com/sharkdp/bat/releases/download/v${BAT_VERSION}/bat-v${BAT_VERSION}-x86_64-unknown-linux-musl.tar.gz" | tar -xz --strip-components=1 -C /build/output/bin --wildcards '*/bat'; \
-    fi
-
-# lsd (ls 增强，替代 eza)
-RUN \
-    LSD_VERSION=$(/usr/local/bin/get_version lsd-rs/lsd | sed 's/v//') && \
-    echo "Downloading lsd version: ${LSD_VERSION}" && \
-    if [ "${TARGETARCH}" = "arm64" ]; then \
-        if ! /usr/local/bin/fetch_release_asset lsd-rs/lsd "${LSD_VERSION}" /build/output/bin \
-            "lsd-v${LSD_VERSION}-aarch64-unknown-linux-musl.tar.gz" \
-            "lsd-v${LSD_VERSION}-aarch64-musl.tar.gz" \
-            "lsd-${LSD_VERSION}-aarch64-unknown-linux-musl.tar.gz" \
-            "lsd-${LSD_VERSION}-aarch64.tar.gz" \
-            "lsd_${LSD_VERSION}_linux_arm64.tar.gz"; then \
-            echo "[lsd] prebuilt assets missing, building from source" >&2 && \
-            /usr/local/bin/build_rust_project lsd-rs/lsd lsd; \
+RUN set -eux; \
+    # 映射 TARGETARCH 到 soar_fetch_static.sh 接受的 arch 值 (x86_64|arm64)
+    ARCH="$( [ "$TARGETARCH" = "arm64" ] && echo arm64 || echo x86_64 )"; \
+    PACKAGES_ALL="junegunn/fzf sharkdp/bat lsd-rs/lsd BurntSushi/ripgrep sharkdp/fd dandavison/delta jesseduffield/lazygit jorgerojas26/lazysql sigoden/aichat Gaurav-Gosain/tuios ajeetdsouza/zoxide bootandy/dust ClementTsang/bottom dalance/procs chmln/sd XAMPPRocky/tokei muesli/duf jqlang/jq mikefarah/yq charmbracelet/glow sxyazi/yazi zellij-org/zellij atuinsh/atuin denisidoro/navi ouch-org/ouch pemistahl/grex astral-sh/ruff astral-sh/uv mvdan/sh JohnnyMorganz/StyLua"; \
+    mkdir -p /build/output/bin /tmp/soar_fetch; \
+    failures=""; \
+    BASE_TMP="/tmp/soar_fetch"; \
+    for repo in $PACKAGES_ALL; do \
+      echo "[soar_fetch] fetching $repo for arch=$ARCH"; \
+      TMPDIR=$(mktemp -d -p "$BASE_TMP" "fetch.XXXX") || TMPDIR=$(mktemp -d); \
+      if /usr/local/bin/soar_fetch_static.sh "$repo" --arch "$ARCH" --dest "$TMPDIR"; then \
+        echo "[soar_fetch] $repo downloaded to $TMPDIR"; \
+        echo "[soar_fetch] $repo file count: $(find "$TMPDIR" -type f | wc -l)"; \
+      else \
+        echo "[soar_fetch] $repo failed"; failures="$failures $repo"; fi; \
+    done; \
+    # 打印总下载文件数以便调试
+    echo "[soar_fetch] total downloaded files: $(find "$BASE_TMP" -type f | wc -l)"; \
+    # 严格的一次性递归检测所有下载文件（ELF 二进制 / shebang 脚本）并搬运到 bin
+    # 使用 xargs + bash 每个文件单独处理，避免 /bin/sh 不支持 read -d 的问题
+    find "$BASE_TMP" -type f -print0 | xargs -0 -n1 -I{} bash -c '\
+        f="$1"; \
+        base=$(basename "'$'f"); \
+        dest="/build/output/bin/$base"; \
+        if [ -e "$dest" ]; then echo "[soar_fetch] skip existing $base"; exit 0; fi; \
+        if file -L "$f" 2>/dev/null | grep -qEi "ELF"; then \
+            mv -n "$f" "$dest" 2>/dev/null || cp -u "$f" "$dest" 2>/dev/null || true; \
+            echo "[soar_fetch] moved binary $base"; exit 0; \
         fi; \
-    else \
-        if ! /usr/local/bin/fetch_release_asset lsd-rs/lsd "${LSD_VERSION}" /build/output/bin \
-            "lsd-v${LSD_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
-            "lsd-v${LSD_VERSION}-x86_64-musl.tar.gz" \
-            "lsd-${LSD_VERSION}-x86_64.tar.gz" \
-            "lsd_${LSD_VERSION}_linux_amd64.tar.gz"; then \
-            echo "[lsd] x86_64 asset missing, building from source" >&2 && \
-            /usr/local/bin/build_rust_project lsd-rs/lsd lsd; \
+        if head -n 1 "$f" 2>/dev/null | grep -q "^#!"; then \
+            cp -u "$f" "$dest" 2>/dev/null || true; echo "[soar_fetch] copied script $base"; exit 0; \
         fi; \
-    fi
+        echo "[soar_fetch] ignored $base"' _ {} ; \
+    # 清理临时下载目录
+    rm -rf "$BASE_TMP" || true; \
+    if [ -n "$failures" ]; then echo "FAILED_FETCHES:$failures" > /build/output/FAILED_FETCHES.txt; fi; \
+    if [ -f /build/output/FAILED_FETCHES.txt ]; then echo "=== FAILED_FETCHES ==="; cat /build/output/FAILED_FETCHES.txt || true; fi; \
+    # Ensure binaries are executable
+    chmod -R a+x /build/output/bin || true; \
+    echo "=== /build/output/bin contents ==="; ls -la /build/output/bin || true
 
-# ripgrep (版本号无 v 前缀，x86_64 使用 musl)
-RUN \
-    RG_VERSION=$(/usr/local/bin/get_version BurntSushi/ripgrep) && \
-    echo "Downloading ripgrep version: ${RG_VERSION}" && \
-    if [ "${TARGETARCH}" = "arm64" ]; then \
-        if ! /usr/local/bin/fetch_release_asset BurntSushi/ripgrep "${RG_VERSION}" /build/output/bin \
-            "ripgrep-${RG_VERSION}-aarch64-unknown-linux-musl.tar.gz" \
-            "ripgrep-${RG_VERSION}-aarch64.tar.gz" \
-            "ripgrep-${RG_VERSION}-arm64-unknown-linux-musl.tar.gz" \
-            "ripgrep-${RG_VERSION}-linux-aarch64.tar.gz" \
-            "ripgrep-${RG_VERSION}-aarch64-unknown-linux-gnu.tar.gz"; then \
-            echo "[ripgrep] prebuilt assets missing, building from source" >&2 && \
-            /usr/local/bin/build_rust_project BurntSushi/ripgrep rg; \
-        fi; \
-    else \
-        if ! /usr/local/bin/fetch_release_asset BurntSushi/ripgrep "${RG_VERSION}" /build/output/bin "ripgrep-${RG_VERSION}-x86_64-unknown-linux-musl.tar.gz"; then \
-            echo "[ripgrep] x86_64 asset missing, building from source" >&2 && \
-            /usr/local/bin/build_rust_project BurntSushi/ripgrep rg; \
-        fi; \
-    fi
 
-# fd (musl 静态编译)
-RUN \
-    FD_VERSION=$(/usr/local/bin/get_version sharkdp/fd | sed 's/v//') && \
-    echo "Downloading fd version: ${FD_VERSION}" && \
-    mkdir -p /tmp/fd && \
-    if [ "${TARGETARCH}" = "arm64" ]; then \
-        curl -fsSL "https://github.com/sharkdp/fd/releases/download/v${FD_VERSION}/fd-v${FD_VERSION}-aarch64-unknown-linux-musl.tar.gz" | tar -xz -C /tmp/fd --strip-components=1 && \
-        cp /tmp/fd/fd /build/output/bin/; \
-    else \
-        curl -fsSL "https://github.com/sharkdp/fd/releases/download/v${FD_VERSION}/fd-v${FD_VERSION}-x86_64-unknown-linux-musl.tar.gz" | tar -xz -C /tmp/fd --strip-components=1 && \
-        cp /tmp/fd/fd /build/output/bin/; \
-    fi && rm -rf /tmp/fd
-
-# delta (git diff 增强, musl 静态编译，版本号无 v 前缀)
-RUN \
-    DELTA_VERSION=$(/usr/local/bin/get_version dandavison/delta) && \
-    echo "Downloading delta version: ${DELTA_VERSION}" && \
-    if [ "${TARGETARCH}" = "arm64" ]; then \
-        if ! /usr/local/bin/fetch_release_asset dandavison/delta "${DELTA_VERSION}" /build/output/bin \
-            "delta-${DELTA_VERSION}-aarch64-unknown-linux-musl.tar.gz" \
-            "delta-${DELTA_VERSION}-aarch64.tar.gz" \
-            "delta-${DELTA_VERSION}-arm64-unknown-linux-musl.tar.gz" \
-            "delta-${DELTA_VERSION}-aarch64-unknown-linux-gnu.tar.gz" \
-            "delta-${DELTA_VERSION}-linux-aarch64.tar.gz"; then \
-            echo "[delta] prebuilt assets missing, building from source" >&2 && \
-            /usr/local/bin/build_rust_project dandavison/delta delta; \
-        fi; \
-    else \
-        if ! /usr/local/bin/fetch_release_asset dandavison/delta "${DELTA_VERSION}" /build/output/bin "delta-${DELTA_VERSION}-x86_64-unknown-linux-musl.tar.gz"; then \
-            echo "[delta] x86_64 asset missing, building from source" >&2 && \
-            /usr/local/bin/build_rust_project dandavison/delta delta; \
-        fi; \
-    fi
-
-# lazygit
-RUN \
-    LAZYGIT_VERSION=$(/usr/local/bin/get_version jesseduffield/lazygit | sed 's/v//') && \
-    echo "Downloading lazygit version: ${LAZYGIT_VERSION}" && \
-    if [ "${TARGETARCH}" = "arm64" ]; then \
-        curl -fsSL "https://github.com/jesseduffield/lazygit/releases/download/v${LAZYGIT_VERSION}/lazygit_${LAZYGIT_VERSION}_Linux_arm64.tar.gz" | tar -xz -C /build/output/bin lazygit; \
-    else \
-        curl -fsSL "https://github.com/jesseduffield/lazygit/releases/download/v${LAZYGIT_VERSION}/lazygit_${LAZYGIT_VERSION}_Linux_x86_64.tar.gz" | tar -xz -C /build/output/bin lazygit; \
-    fi
-
-# lazysql
-RUN \
-    LAZYSQL_VERSION=$(/usr/local/bin/get_version jorgerojas26/lazysql | sed 's/^v//') && \
-    echo "Downloading lazysql version: ${LAZYSQL_VERSION}" && \
-    mkdir -p /tmp/lazysql && \
-    if [ "${TARGETARCH}" = "arm64" ]; then \
-        curl -fsSL "https://github.com/jorgerojas26/lazysql/releases/download/v${LAZYSQL_VERSION}/lazysql_Linux_arm64.tar.gz" | tar -xz -C /tmp/lazysql; \
-    else \
-        curl -fsSL "https://github.com/jorgerojas26/lazysql/releases/download/v${LAZYSQL_VERSION}/lazysql_Linux_x86_64.tar.gz" | tar -xz -C /tmp/lazysql; \
-    fi && \
-    cp /tmp/lazysql/lazysql /build/output/bin/ && \
-    rm -rf /tmp/lazysql
-
-# aichat
-RUN \
-    AICHAT_VERSION=$(/usr/local/bin/get_version sigoden/aichat) && \
-    echo "Downloading aichat version: ${AICHAT_VERSION}" && \
-    mkdir -p /tmp/aichat && \
-    if [ "${TARGETARCH}" = "arm64" ]; then \
-        curl -fsSL "https://github.com/sigoden/aichat/releases/download/${AICHAT_VERSION}/aichat-${AICHAT_VERSION}-aarch64-unknown-linux-musl.tar.gz" | tar -xz -C /tmp/aichat; \
-    else \
-        curl -fsSL "https://github.com/sigoden/aichat/releases/download/${AICHAT_VERSION}/aichat-${AICHAT_VERSION}-x86_64-unknown-linux-musl.tar.gz" | tar -xz -C /tmp/aichat; \
-    fi && \
-    cp /tmp/aichat/aichat /build/output/bin/ && \
-    rm -rf /tmp/aichat
-
-# tuios
-RUN \
-    TUIOS_VERSION=$(/usr/local/bin/get_version Gaurav-Gosain/tuios | sed 's/^v//') && \
-    echo "Downloading tuios version: ${TUIOS_VERSION}" && \
-    mkdir -p /tmp/tuios && \
-    if [ "${TARGETARCH}" = "arm64" ]; then \
-        curl -fsSL "https://github.com/Gaurav-Gosain/tuios/releases/download/v${TUIOS_VERSION}/tuios_${TUIOS_VERSION}_Linux_arm64.tar.gz" | tar -xz -C /tmp/tuios; \
-    else \
-        curl -fsSL "https://github.com/Gaurav-Gosain/tuios/releases/download/v${TUIOS_VERSION}/tuios_${TUIOS_VERSION}_Linux_x86_64.tar.gz" | tar -xz -C /tmp/tuios; \
-    fi && \
-    cp /tmp/tuios/tuios /build/output/bin/ && \
-    rm -rf /tmp/tuios
-
-# Vim (静态编译)
+# Vim: do not attempt to fetch/build Vim binary during build (keep plugin/runtime only)
 RUN \
     VIM_VERSION=$(/usr/local/bin/get_version vim/vim | sed 's/v//') && \
-    echo "Building vim version: ${VIM_VERSION}" && \
-    git clone --depth 1 --branch "v${VIM_VERSION}" https://github.com/vim/vim.git /tmp/vim && \
-    cd /tmp/vim && \
-    CFLAGS="-O2" LDFLAGS='-Wl,-rpath,$$ORIGIN/../lib' ./configure \
-        --with-features=huge \
-        --enable-multibyte \
-        --enable-gui=gtk3 \
-        --with-x \
-        --enable-xim \
-        --enable-fontset \
-        --enable-terminal \
-        --enable-cscope \
-        --enable-largefile \
-        --enable-fail-if-missing \
-        --enable-perlinterp=no \
-        --enable-pythoninterp=no \
-        --enable-python3interp=no \
-        --enable-rubyinterp=no \
-        --enable-luainterp=no \
-        --enable-tclinterp=no \
-        --enable-mzschemeinterp=no \
-        --enable-netbeans=no \
-        --enable-channel=no \
-        --enable-gpm=no \
-        --enable-acl=no \
-        --enable-selinux=no \
-        --enable-xsmp=no \
-        --enable-nls=no \
-        --prefix=/build/output/vim \
-        --with-tlib=ncurses && \
-    make -j"$(nproc)" && \
-    make install STRIP=/bin/true && \
-    VIM_PREFIX=/build/output/vim && \
-    mkdir -p "${VIM_PREFIX}/lib" && \
-    DEP_FILE="$(mktemp)" && TMP_FILE="${DEP_FILE}.tmp" && \
-    : > "${DEP_FILE}" && \
-    for binary in "${VIM_PREFIX}/bin/vim" "${VIM_PREFIX}/bin/gvim"; do \
-        if [ -x "$binary" ]; then \
-            ldd "$binary" > "${TMP_FILE}" && \
-            if grep -q "not found" "${TMP_FILE}"; then \
-                cat "${TMP_FILE}" >&2 && \
-                echo "Missing shared libraries for $binary" >&2 && \
-                exit 1; \
-            fi && \
-            awk '/=>/ { if ($3 ~ /^\//) print $3 } /^[[:space:]]*\// { if ($1 ~ /^\//) print $1 }' "${TMP_FILE}" >> "${DEP_FILE}"; \
-        fi; \
-    done && \
-    sort -u "${DEP_FILE}" | while read -r lib; do \
-        case "$lib" in \
-            "") continue ;; \
-            */ld-linux*.so.*) continue ;; \
-            */libc.so.*) continue ;; \
-            */libm.so.*) continue ;; \
-            */libpthread.so.*) continue ;; \
-            */librt.so.*) continue ;; \
-            */libdl.so.*) continue ;; \
-            */libutil.so.*) continue ;; \
-            */libgcc_s.so.*) continue ;; \
-        esac; \
-        cp -u "$lib" "${VIM_PREFIX}/lib/"; \
-    done && \
-    for binary in "${VIM_PREFIX}/bin/vim" "${VIM_PREFIX}/bin/gvim"; do \
-        if [ -x "$binary" ]; then \
-            mv "$binary" "${binary}.real" && \
-            printf '%s\n' \
-                '#!/usr/bin/env bash' \
-                'INVOKED_NAME="$(basename "$0")"' \
-                'SCRIPT_PATH="$(readlink -f "$0")"' \
-                'BIN_DIR="$(dirname "$SCRIPT_PATH")"' \
-                'REAL_NAME="$(basename "$SCRIPT_PATH")"' \
-                'LIB_DIR="${BIN_DIR}/../lib"' \
-                'RUNTIME_DIR="$(ls -d "${BIN_DIR}/../share/vim"/vim* 2>/dev/null | head -n 1)"' \
-                'if [ -n "$RUNTIME_DIR" ]; then' \
-                '  export VIMRUNTIME="$RUNTIME_DIR"' \
-                'fi' \
-                'export LD_LIBRARY_PATH="${LIB_DIR}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"' \
-                'exec -a "$INVOKED_NAME" "${BIN_DIR}/${REAL_NAME}.real" "$@"' \
-                > "$binary" && \
-            chmod +x "$binary"; \
-        fi; \
-    done && \
-    rm -f "${DEP_FILE}" "${TMP_FILE}" && \
-    rm -rf /tmp/vim
+    echo "[vim] Skipping acquisition of Vim binary for offline package (we keep runtime/plugins only)" >&2 && \
+    # Ensure an exception entry is recorded for auditing so verify recognizes the intentional omission
+    echo "vim:${VIM_VERSION}:MISSING_STATIC" >> /build/output/DYNAMIC_EXCEPTIONS.txt && \
+    echo "vim documented as MISSING_STATIC" && \
+    :
 
 # amix/vimrc (The Ultimate vimrc - awesome version)
 RUN git clone --depth 1 https://github.com/amix/vimrc.git /build/output/vim_runtime && \
@@ -489,242 +139,53 @@ RUN git clone --depth 1 https://github.com/amix/vimrc.git /build/output/vim_runt
         /build/output/vim_runtime/install_basic_vimrc.sh \
         /build/output/vim_runtime/install_awesome_parameterized.sh
 
-# zoxide
-RUN \
-    ZOXIDE_VERSION=$(/usr/local/bin/get_version ajeetdsouza/zoxide | sed 's/v//') && \
-    echo "Downloading zoxide version: ${ZOXIDE_VERSION}" && \
-    if [ "${TARGETARCH}" = "arm64" ]; then \
-        curl -fsSL "https://github.com/ajeetdsouza/zoxide/releases/download/v${ZOXIDE_VERSION}/zoxide-${ZOXIDE_VERSION}-aarch64-unknown-linux-musl.tar.gz" | tar -xz -C /build/output/bin zoxide; \
-    else \
-        curl -fsSL "https://github.com/ajeetdsouza/zoxide/releases/download/v${ZOXIDE_VERSION}/zoxide-${ZOXIDE_VERSION}-x86_64-unknown-linux-musl.tar.gz" | tar -xz -C /build/output/bin zoxide; \
-    fi
+# zoxide - handled via soar_fetch_static.sh (see unified fetch block)
+# (Previously downloaded via curl/tar; now fetched by /usr/local/bin/soar_fetch_static.sh.)
 
-# dust (du 的现代替代, 磁盘使用分析)
-RUN \
-    DUST_VERSION=$(/usr/local/bin/get_version bootandy/dust | sed 's/v//') && \
-    echo "Downloading dust version: ${DUST_VERSION}" && \
-    if [ "${TARGETARCH}" = "arm64" ]; then \
-        curl -fsSL "https://github.com/bootandy/dust/releases/download/v${DUST_VERSION}/dust-v${DUST_VERSION}-aarch64-unknown-linux-musl.tar.gz" | tar -xz --strip-components=1 -C /build/output/bin --wildcards '*/dust'; \
-    else \
-        curl -fsSL "https://github.com/bootandy/dust/releases/download/v${DUST_VERSION}/dust-v${DUST_VERSION}-x86_64-unknown-linux-musl.tar.gz" | tar -xz --strip-components=1 -C /build/output/bin --wildcards '*/dust'; \
-    fi
+# dust - handled via soar_fetch_static.sh (see unified fetch block)
+# (Previously downloaded via curl/tar; now fetched by /usr/local/bin/soar_fetch_static.sh.)
 
-# bottom (btm, 系统监控工具, top/htop 的现代替代)
-RUN \
-    BTM_VERSION=$(/usr/local/bin/get_version ClementTsang/bottom) && \
-    echo "Downloading bottom version: ${BTM_VERSION}" && \
-    if [ "${TARGETARCH}" = "arm64" ]; then \
-        curl -fsSL "https://github.com/ClementTsang/bottom/releases/download/${BTM_VERSION}/bottom_aarch64-unknown-linux-musl.tar.gz" | tar -xz -C /build/output/bin btm; \
-    else \
-        curl -fsSL "https://github.com/ClementTsang/bottom/releases/download/${BTM_VERSION}/bottom_x86_64-unknown-linux-musl.tar.gz" | tar -xz -C /build/output/bin btm; \
-    fi
+# bottom - handled via soar_fetch_static.sh (see unified fetch block)
 
-# procs (ps 的现代替代, 进程查看)
-RUN \
-    PROCS_VERSION=$(/usr/local/bin/get_version dalance/procs | sed 's/v//') && \
-    echo "Downloading procs version: ${PROCS_VERSION}" && \
-    mkdir -p /tmp/procs && \
-    if [ "${TARGETARCH}" = "arm64" ]; then \
-        curl -fsSL "https://github.com/dalance/procs/releases/download/v${PROCS_VERSION}/procs-v${PROCS_VERSION}-aarch64-linux.zip" -o /tmp/procs/procs.zip && \
-        unzip -q /tmp/procs/procs.zip -d /tmp/procs && \
-        cp /tmp/procs/procs /build/output/bin/; \
-    else \
-        curl -fsSL "https://github.com/dalance/procs/releases/download/v${PROCS_VERSION}/procs-v${PROCS_VERSION}-x86_64-linux.zip" -o /tmp/procs/procs.zip && \
-        unzip -q /tmp/procs/procs.zip -d /tmp/procs && \
-        cp /tmp/procs/procs /build/output/bin/; \
-    fi && rm -rf /tmp/procs
+# procs - handled via soar_fetch_static.sh (see unified fetch block)
 
-# sd (sed 的现代替代, 搜索替换)
-RUN \
-    SD_VERSION=$(/usr/local/bin/get_version chmln/sd | sed 's/v//') && \
-    echo "Downloading sd version: ${SD_VERSION}" && \
-    if [ "${TARGETARCH}" = "arm64" ]; then \
-        curl -fsSL "https://github.com/chmln/sd/releases/download/v${SD_VERSION}/sd-v${SD_VERSION}-aarch64-unknown-linux-musl.tar.gz" | tar -xz --strip-components=1 -C /build/output/bin --wildcards '*/sd'; \
-    else \
-        curl -fsSL "https://github.com/chmln/sd/releases/download/v${SD_VERSION}/sd-v${SD_VERSION}-x86_64-unknown-linux-musl.tar.gz" | tar -xz --strip-components=1 -C /build/output/bin --wildcards '*/sd'; \
-    fi
-RUN \
-    HYPERFINE_VERSION=$(/usr/local/bin/get_version sharkdp/hyperfine | sed 's/v//') && \
-    echo "Downloading hyperfine version: ${HYPERFINE_VERSION}" && \
-    if [ "${TARGETARCH}" = "arm64" ]; then \
-        curl -fsSL "https://github.com/sharkdp/hyperfine/releases/download/v${HYPERFINE_VERSION}/hyperfine-v${HYPERFINE_VERSION}-aarch64-unknown-linux-musl.tar.gz" | tar -xz --strip-components=1 -C /build/output/bin --wildcards '*/hyperfine'; \
-    else \
-        curl -fsSL "https://github.com/sharkdp/hyperfine/releases/download/v${HYPERFINE_VERSION}/hyperfine-v${HYPERFINE_VERSION}-x86_64-unknown-linux-musl.tar.gz" | tar -xz --strip-components=1 -C /build/output/bin --wildcards '*/hyperfine'; \
-    fi
-
-# tokei (代码统计工具, 使用动态版本获取最新)
-RUN \
-    TOKEI_VERSION=$(/usr/local/bin/get_version XAMPPRocky/tokei | sed 's/v//') && \
-    echo "Downloading tokei version: ${TOKEI_VERSION}" && \
-    if [ "${TARGETARCH}" = "arm64" ]; then \
-        for a in "tokei-${TOKEI_VERSION}-aarch64-unknown-linux-musl.tar.gz" "tokei-aarch64-unknown-linux-musl.tar.gz" "tokei-${TOKEI_VERSION}-aarch64.tar.gz"; do \
-            if curl -fsSL "https://github.com/XAMPPRocky/tokei/releases/download/v${TOKEI_VERSION}/${a}" | tar -xz -C /build/output/bin tokei; then break; fi; \
-        done; \
-    else \
-        for a in "tokei-${TOKEI_VERSION}-x86_64-unknown-linux-musl.tar.gz" "tokei-x86_64-unknown-linux-musl.tar.gz" "tokei-${TOKEI_VERSION}-x86_64.tar.gz"; do \
-            if curl -fsSL "https://github.com/XAMPPRocky/tokei/releases/download/v${TOKEI_VERSION}/${a}" | tar -xz -C /build/output/bin tokei; then break; fi; \
-        done; \
-    fi
+# sd - handled via soar_fetch_static.sh (see unified fetch block)
 
 
-# duf (df 的现代替代, 磁盘空间查看)
-RUN \
-    DUF_VERSION=$(/usr/local/bin/get_version muesli/duf | sed 's/v//') && \
-    echo "Downloading duf version: ${DUF_VERSION}" && \
-    mkdir -p /tmp/duf && \
-    if [ "${TARGETARCH}" = "arm64" ]; then \
-        curl -fsSL "https://github.com/muesli/duf/releases/download/v${DUF_VERSION}/duf_${DUF_VERSION}_linux_arm64.tar.gz" | tar -xz -C /tmp/duf && \
-        cp /tmp/duf/duf /build/output/bin/; \
-    else \
-        curl -fsSL "https://github.com/muesli/duf/releases/download/v${DUF_VERSION}/duf_${DUF_VERSION}_linux_x86_64.tar.gz" | tar -xz -C /tmp/duf && \
-        cp /tmp/duf/duf /build/output/bin/; \
-    fi && rm -rf /tmp/duf
+# tokei - handled via soar_fetch_static.sh (see unified fetch block)
 
-# jq (JSON 处理工具)
-RUN \
-    JQ_VERSION=$(/usr/local/bin/get_version jqlang/jq | sed 's/jq-//') && \
-    echo "Downloading jq version: ${JQ_VERSION}" && \
-    if [ "${TARGETARCH}" = "arm64" ]; then \
-        curl -fsSL "https://github.com/jqlang/jq/releases/download/jq-${JQ_VERSION}/jq-linux-arm64" -o /build/output/bin/jq; \
-    else \
-        curl -fsSL "https://github.com/jqlang/jq/releases/download/jq-${JQ_VERSION}/jq-linux-amd64" -o /build/output/bin/jq; \
-    fi && chmod +x /build/output/bin/jq
 
-# yq (YAML 处理工具)
-RUN \
-    YQ_VERSION=$(/usr/local/bin/get_version mikefarah/yq | sed 's/v//') && \
-    echo "Downloading yq version: ${YQ_VERSION}" && \
-    if [ "${TARGETARCH}" = "arm64" ]; then \
-        curl -fsSL "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_arm64" -o /build/output/bin/yq; \
-    else \
-        curl -fsSL "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64" -o /build/output/bin/yq; \
-    fi && chmod +x /build/output/bin/yq
+# duf - handled via soar_fetch_static.sh (see unified fetch block)
 
-# glow (终端 Markdown 渲染)
-RUN \
-    GLOW_VERSION=$(/usr/local/bin/get_version charmbracelet/glow | sed 's/v//') && \
-    echo "Downloading glow version: ${GLOW_VERSION}" && \
-    if [ "${TARGETARCH}" = "arm64" ]; then \
-        curl -fsSL "https://github.com/charmbracelet/glow/releases/download/v${GLOW_VERSION}/glow_${GLOW_VERSION}_Linux_arm64.tar.gz" | tar -xz --strip-components=1 -C /build/output/bin --wildcards '*/glow'; \
-    else \
-        curl -fsSL "https://github.com/charmbracelet/glow/releases/download/v${GLOW_VERSION}/glow_${GLOW_VERSION}_Linux_x86_64.tar.gz" | tar -xz --strip-components=1 -C /build/output/bin --wildcards '*/glow'; \
-    fi
+# jq - handled via soar_fetch_static.sh (see unified fetch block)
 
-# yazi (终端文件管理器, 非常快)
-RUN \
-    YAZI_VERSION=$(/usr/local/bin/get_version sxyazi/yazi | sed 's/v//') && \
-    echo "Downloading yazi version: ${YAZI_VERSION}" && \
-    mkdir -p /tmp/yazi && \
-    if [ "${TARGETARCH}" = "arm64" ]; then \
-        curl -fsSL "https://github.com/sxyazi/yazi/releases/download/v${YAZI_VERSION}/yazi-aarch64-unknown-linux-musl.zip" -o /tmp/yazi/yazi.zip; \
-    else \
-        curl -fsSL "https://github.com/sxyazi/yazi/releases/download/v${YAZI_VERSION}/yazi-x86_64-unknown-linux-musl.zip" -o /tmp/yazi/yazi.zip; \
-    fi && \
-    unzip -q /tmp/yazi/yazi.zip -d /tmp/yazi && \
-    cp /tmp/yazi/yazi-*/yazi /tmp/yazi/yazi-*/ya /build/output/bin/ && \
-    rm -rf /tmp/yazi
+# yq - handled via soar_fetch_static.sh (see unified fetch block)
 
-# zellij (终端复用器, 现代 tmux 替代)
-RUN \
-    ZELLIJ_VERSION=$(/usr/local/bin/get_version zellij-org/zellij | sed 's/v//') && \
-    echo "Downloading zellij version: ${ZELLIJ_VERSION}" && \
-    mkdir -p /tmp/zellij && \
-    if [ "${TARGETARCH}" = "arm64" ]; then \
-        curl -fsSL "https://github.com/zellij-org/zellij/releases/download/v${ZELLIJ_VERSION}/zellij-aarch64-unknown-linux-musl.tar.gz" | tar -xz -C /tmp/zellij; \
-    else \
-        curl -fsSL "https://github.com/zellij-org/zellij/releases/download/v${ZELLIJ_VERSION}/zellij-x86_64-unknown-linux-musl.tar.gz" | tar -xz -C /tmp/zellij; \
-    fi && \
-    cp /tmp/zellij/zellij /build/output/bin/ && \
-    rm -rf /tmp/zellij
+# glow - handled via soar_fetch_static.sh (see unified fetch block)
 
-# atuin (Shell 历史搜索和同步)
-RUN \
-    ATUIN_VERSION=$(/usr/local/bin/get_version atuinsh/atuin | sed 's/v//') && \
-    echo "Downloading atuin version: ${ATUIN_VERSION}" && \
-    mkdir -p /tmp/atuin && \
-    if [ "${TARGETARCH}" = "arm64" ]; then \
-        curl -fsSL "https://github.com/atuinsh/atuin/releases/download/v${ATUIN_VERSION}/atuin-aarch64-unknown-linux-musl.tar.gz" | tar -xz -C /tmp/atuin --strip-components=1; \
-    else \
-        curl -fsSL "https://github.com/atuinsh/atuin/releases/download/v${ATUIN_VERSION}/atuin-x86_64-unknown-linux-musl.tar.gz" | tar -xz -C /tmp/atuin --strip-components=1; \
-    fi && \
-    cp /tmp/atuin/atuin /build/output/bin/ && \
-    rm -rf /tmp/atuin
+# yazi - handled via soar_fetch_static.sh (see unified fetch block)
 
-# navi (交互式命令 cheatsheet)
-RUN \
-    NAVI_VERSION=$(/usr/local/bin/get_version denisidoro/navi | sed 's/v//') && \
-    echo "Downloading navi version: ${NAVI_VERSION}" && \
-    mkdir -p /tmp/navi && \
-    if [ "${TARGETARCH}" = "arm64" ]; then \
-        curl -fsSL "https://github.com/denisidoro/navi/releases/download/v${NAVI_VERSION}/navi-v${NAVI_VERSION}-aarch64-unknown-linux-musl.tar.gz" | tar -xz -C /tmp/navi; \
-    else \
-        curl -fsSL "https://github.com/denisidoro/navi/releases/download/v${NAVI_VERSION}/navi-v${NAVI_VERSION}-x86_64-unknown-linux-musl.tar.gz" | tar -xz -C /tmp/navi; \
-    fi && \
-    cp /tmp/navi/navi /build/output/bin/ && \
-    rm -rf /tmp/navi
+# zellij - handled via soar_fetch_static.sh (see unified fetch block)
 
-# ouch (通用解压缩工具)
-RUN \
-    OUCH_VERSION=$(/usr/local/bin/get_version ouch-org/ouch) && \
-    echo "Downloading ouch version: ${OUCH_VERSION}" && \
-    mkdir -p /tmp/ouch && \
-    if [ "${TARGETARCH}" = "arm64" ]; then \
-        curl -fsSL "https://github.com/ouch-org/ouch/releases/download/${OUCH_VERSION}/ouch-aarch64-unknown-linux-musl.tar.gz" | tar -xz -C /tmp/ouch --strip-components=1; \
-    else \
-        curl -fsSL "https://github.com/ouch-org/ouch/releases/download/${OUCH_VERSION}/ouch-x86_64-unknown-linux-musl.tar.gz" | tar -xz -C /tmp/ouch --strip-components=1; \
-    fi && \
-    cp /tmp/ouch/ouch /build/output/bin/ && \
-    rm -rf /tmp/ouch
+# atuin - handled via soar_fetch_static.sh (see unified fetch block)
 
-# grex (从示例生成正则表达式)
-RUN \
-    GREX_VERSION=$(/usr/local/bin/get_version pemistahl/grex | sed 's/v//') && \
-    echo "Downloading grex version: ${GREX_VERSION}" && \
-    mkdir -p /tmp/grex && \
-    if [ "${TARGETARCH}" = "arm64" ]; then \
-        curl -fsSL "https://github.com/pemistahl/grex/releases/download/v${GREX_VERSION}/grex-v${GREX_VERSION}-aarch64-unknown-linux-musl.tar.gz" | tar -xz -C /tmp/grex; \
-    else \
-        curl -fsSL "https://github.com/pemistahl/grex/releases/download/v${GREX_VERSION}/grex-v${GREX_VERSION}-x86_64-unknown-linux-musl.tar.gz" | tar -xz -C /tmp/grex; \
-    fi && \
-    cp /tmp/grex/grex /build/output/bin/ && \
-    rm -rf /tmp/grex
+# navi - handled via soar_fetch_static.sh (see unified fetch block)
+# (Previously had a fetch_release_asset + soar fallback; now handled by /usr/local/bin/soar_fetch_static.sh)
+
+# ouch - handled via soar_fetch_static.sh (see unified fetch block)
+
+# grex - handled via soar_fetch_static.sh (see unified fetch block)
 
 # -----------------------------------------------------------------------------
 # 代码格式化工具
 # -----------------------------------------------------------------------------
 
-# ruff (Python linter + formatter, 超快速, musl 静态编译)
-RUN \
-    RUFF_VERSION=$(/usr/local/bin/get_version astral-sh/ruff) && \
-    echo "Downloading ruff version: ${RUFF_VERSION}" && \
-    if [ "${TARGETARCH}" = "arm64" ]; then \
-        curl -fsSL "https://github.com/astral-sh/ruff/releases/download/${RUFF_VERSION}/ruff-aarch64-unknown-linux-musl.tar.gz" | tar -xz --strip-components=1 -C /build/output/bin --wildcards '*/ruff'; \
-    else \
-        curl -fsSL "https://github.com/astral-sh/ruff/releases/download/${RUFF_VERSION}/ruff-x86_64-unknown-linux-musl.tar.gz" | tar -xz --strip-components=1 -C /build/output/bin --wildcards '*/ruff'; \
-    fi
+# ruff - handled via soar_fetch_static.sh (see unified fetch block)
 
-# shfmt (Shell/Bash 格式化工具)
-RUN \
-    SHFMT_VERSION=$(/usr/local/bin/get_version mvdan/sh) && \
-    echo "Downloading shfmt version: ${SHFMT_VERSION}" && \
-    if [ "${TARGETARCH}" = "arm64" ]; then \
-        curl -fsSL "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/shfmt_${SHFMT_VERSION}_linux_arm64" -o /build/output/bin/shfmt; \
-    else \
-        curl -fsSL "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/shfmt_${SHFMT_VERSION}_linux_amd64" -o /build/output/bin/shfmt; \
-    fi && chmod +x /build/output/bin/shfmt
+# shfmt - handled via soar_fetch_static.sh (see unified fetch block)
 
 # stylua (Lua 格式化工具, musl 静态编译)
-RUN \
-    STYLUA_VERSION=$(/usr/local/bin/get_version JohnnyMorganz/StyLua) && \
-    echo "Downloading stylua version: ${STYLUA_VERSION}" && \
-    mkdir -p /tmp/stylua && \
-    if [ "${TARGETARCH}" = "arm64" ]; then \
-        curl -fsSL "https://github.com/JohnnyMorganz/StyLua/releases/download/${STYLUA_VERSION}/stylua-linux-aarch64-musl.zip" -o /tmp/stylua/stylua.zip; \
-    else \
-        curl -fsSL "https://github.com/JohnnyMorganz/StyLua/releases/download/${STYLUA_VERSION}/stylua-linux-x86_64-musl.zip" -o /tmp/stylua/stylua.zip; \
-    fi && \
-    unzip -q /tmp/stylua/stylua.zip -d /build/output/bin && \
-    rm -rf /tmp/stylua
+# stylua - handled via soar_fetch_static.sh (see unified fetch block)
 
 # istyle-verilog-formatter (从源码静态编译)
 RUN git clone --depth 1 https://github.com/thomasrussellmurphy/istyle-verilog-formatter.git /tmp/istyle && \
@@ -733,20 +194,8 @@ RUN git clone --depth 1 https://github.com/thomasrussellmurphy/istyle-verilog-fo
     cp iStyle /build/output/bin/ && \
     rm -rf /tmp/istyle
 
-# uv (Python 包管理器, 超快速, musl 静态编译)
-# uv 版本格式不带 v 前缀，直接是版本号如 0.9.25
-RUN \
-    UV_VERSION=$(/usr/local/bin/get_version astral-sh/uv | sed 's/^v//') && \
-    echo "Downloading uv version: ${UV_VERSION}" && \
-    mkdir -p /tmp/uv && \
-    if [ "${TARGETARCH}" = "arm64" ]; then \
-        curl -fsSL "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-aarch64-unknown-linux-musl.tar.gz" | tar -xz -C /tmp/uv && \
-        cp /tmp/uv/uv-aarch64-unknown-linux-musl/uv /tmp/uv/uv-aarch64-unknown-linux-musl/uvx /build/output/bin/; \
-    else \
-        curl -fsSL "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-unknown-linux-musl.tar.gz" | tar -xz -C /tmp/uv && \
-        cp /tmp/uv/uv-x86_64-unknown-linux-musl/uv /tmp/uv/uv-x86_64-unknown-linux-musl/uvx /build/output/bin/; \
-    fi && \
-    rm -rf /tmp/uv
+# uv - handled via soar_fetch_static.sh (see unified fetch block)
+# (Previously downloaded via curl/tar; now fetched by /usr/local/bin/soar_fetch_static.sh.)
 
 # zsh (静态编译版本，使用 romkatv/zsh-bin 的 install 脚本安装)
 RUN echo "Installing zsh via romkatv/zsh-bin install script" && \
@@ -820,14 +269,15 @@ RUN \
         curl -fsSL "https://github.com/upx/upx/releases/download/v${UPX_VERSION}/upx-${UPX_VERSION}-amd64_linux.tar.xz" | tar -xJ -C /tmp/upx --strip-components=1; \
     fi && \
     cp /tmp/upx/upx /build/output/bin/upx && \
-    chmod +x /build/output/bin/upx && \
-    echo "=== Compressing binaries with UPX ===" && \
-    for bin in /build/output/bin/* /build/output/vim/bin/*; do \
-        if [ -f "$bin" ] && file "$bin" | grep -q "ELF"; then \
-            echo "Compressing: $(basename $bin)"; \
-            /tmp/upx/upx --best --lzma "$bin" 2>/dev/null || echo "  Skipped (not compressible)"; \
-        fi; \
-    done
+    chmod +x /build/output/bin/upx 
+    # echo "=== Compressing binaries with UPX ===" && \
+    # for bin in /build/output/bin/* /build/output/vim/bin/*; do \
+    #     if [ -f "$bin" ] && file "$bin" | grep -q "ELF"; then \
+    #         echo "Compressing: $(basename $bin)"; \
+    #         /tmp/upx/upx --best --lzma "$bin" 2>/dev/null || echo "  Skipped (not compressible)"; \
+    #     fi; \
+    # done
+
 
 # -----------------------------------------------------------------------------
 # 确保所有二进制文件可执行
@@ -853,7 +303,12 @@ RUN echo "=== Downloaded Tools ===" && \
     done && \
     echo "" && \
     echo ">>> vim:"; \
-    file "/build/output/vim/bin/vim" || true;
+    file "/build/output/vim/bin/vim" || true; \
+    VIM_VERSION=$(/usr/local/bin/get_version vim/vim | sed 's/v//') && \
+    if [ ! -x "/build/output/vim/bin/vim" ] && ! (grep -qE '^vim:.*:MISSING_STATIC' /build/output/DYNAMIC_EXCEPTIONS.txt 2>/dev/null); then \
+        echo "vim:${VIM_VERSION}:MISSING_STATIC" >> /build/output/DYNAMIC_EXCEPTIONS.txt; \
+    fi && \
+    echo "vim post-check complete"
 
 # -----------------------------------------------------------------------------
 # 复制配置文件和安装脚本

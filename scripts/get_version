@@ -1,0 +1,25 @@
+#!/bin/bash
+set -eu
+REPO="$1"
+echo "[get_version] REPO=$REPO" >&2
+VERSION=""
+
+# Try releases/latest redirect header
+VERSION=$(curl -sI "https://github.com/$REPO/releases/latest" | grep -i "location:" | sed -n "s/.*tag\///p" | tr -d "\r\n" || true)
+echo "[get_version] from releases/latest raw=$VERSION" >&2
+
+# Fall back to tags page parsing
+if [ -z "$VERSION" ]; then
+  VERSION=$(curl -s "https://github.com/$REPO/tags" | sed -n 's/.*\/releases\/tag\/\([^\"]*\)\".*/\1/p' | head -n1 || true)
+  echo "[get_version] from tags page raw=$VERSION" >&2
+fi
+
+# Final fallback: git ls-remote tags
+if [ -z "$VERSION" ]; then
+  echo "[get_version] tags page empty, falling back to git ls-remote" >&2
+  VERSION=$(git ls-remote --tags --refs "https://github.com/$REPO.git" | awk -F"/" '/refs\/tags\//{print $NF}' | sed 's/\^{}$//' | sort -V | tail -n1 || true)
+  echo "[get_version] from git ls-remote raw=$VERSION" >&2
+fi
+
+echo "[get_version] final=$VERSION" >&2
+echo "$VERSION"
