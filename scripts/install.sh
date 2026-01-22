@@ -21,7 +21,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # 安装目录（统一放置，避免与系统目录冲突）
 RED_ENV_HOME="${HOME}/.red_env"
+# INSTALL_DIR 可通过命令行选项覆盖（见 parse_args）
 INSTALL_DIR="$RED_ENV_HOME"
+
+# 通过函数在解析参数后更新以下路径，以便支持自定义安装目录
 BIN_DIR="${INSTALL_DIR}/bin"
 SHARE_DIR="${INSTALL_DIR}/share"
 CONFIG_DIR="${INSTALL_DIR}/configs"
@@ -34,7 +37,7 @@ FONT_DIR="${INSTALL_DIR}/fonts"
 AUTO_YES=false
 INSTALL_FONTS=true
 BACKUP_EXISTING=true
-VIMRC_PROFILE="awesome"
+VIMRC_PROFILE="minimal"
 
 # 函数：打印带颜色的消息
 log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
@@ -54,13 +57,15 @@ Red Environment - 离线安装脚本
     -y, --yes           自动确认所有提示
     --no-fonts          不安装 Nerd Fonts 字体
     --no-backup         不备份现有配置
-    --vimrc <profile>   Vim 配置可选: awesome|minimal (默认 awesome)
+    --install-dir <dir> 指定安装目录（例如: /opt/red_env 或 ~/myenv）
+    --vimrc <profile>   Vim 配置可选: awesome|minimal (默认 minimal)
     -h, --help          显示此帮助信息
 
 示例:
     ./install.sh              # 交互式安装
     ./install.sh -y           # 自动安装
     ./install.sh --no-fonts   # 不安装字体
+    ./install.sh --install-dir ~/myenv  # 指定安装目录
     ./install.sh --vimrc minimal  # 使用最小 Vim 配置
 EOF
 }
@@ -94,6 +99,28 @@ parse_args() {
                 VIMRC_PROFILE="${1#*=}"
                 shift
                 ;;
+            --install-dir)
+                shift
+                if [ -z "$1" ]; then
+                    log_error "--install-dir 需要指定路径"
+                    exit 1
+                fi
+                INSTALL_DIR="$1"
+                shift
+                ;;
+            --install-dir=*)
+                INSTALL_DIR="${1#*=}"
+                shift
+                ;;
+            -d)
+                shift
+                if [ -z "$1" ]; then
+                    log_error "-d 需要指定路径"
+                    exit 1
+                fi
+                INSTALL_DIR="$1"
+                shift
+                ;;
             -h|--help)
                 print_help
                 exit 0
@@ -110,6 +137,19 @@ parse_args() {
         log_error "不支持的 Vim 配置: $VIMRC_PROFILE (仅支持 awesome|minimal)"
         exit 1
     fi
+}
+
+# 在解析参数后更新基于 INSTALL_DIR 的路径
+update_install_paths() {
+    # 将 RED_ENV_HOME 与 INSTALL_DIR 对齐（保留兼容旧变量名）
+    RED_ENV_HOME="$INSTALL_DIR"
+    BIN_DIR="${INSTALL_DIR}/bin"
+    SHARE_DIR="${INSTALL_DIR}/share"
+    CONFIG_DIR="${INSTALL_DIR}/configs"
+    ZIM_HOME="${INSTALL_DIR}/zim"
+    RED_ENV_CACHE="${INSTALL_DIR}/cache"
+    FZF_HOME="${INSTALL_DIR}/fzf"
+    FONT_DIR="${INSTALL_DIR}/fonts"
 }
 
 # 函数：确认继续
@@ -522,11 +562,11 @@ print_completion() {
     echo "后续步骤:"
     echo ""
     echo "  1. 使用静态编译的 Zsh (无需 root 权限):"
-    echo "     ~/.red_env/bin/zsh"
+    echo "     ${RED_ENV_HOME}/bin/zsh"
     echo ""
     echo "  2. 或将其设为默认 Shell (需要管理员权限):"
-    echo "     sudo sh -c 'echo $HOME/.red_env/bin/zsh >> /etc/shells'"
-    echo "     chsh -s ~/.red_env/bin/zsh"
+    echo "     sudo sh -c 'echo ${RED_ENV_HOME}/bin/zsh >> /etc/shells'"
+    echo "     chsh -s ${RED_ENV_HOME}/bin/zsh"
     echo ""
     echo "  3. 配置 Git 用户信息:"
     echo "     git config --global user.name \"Your Name\""
@@ -549,6 +589,8 @@ print_completion() {
 # 主函数
 main() {
     parse_args "$@"
+    # 根据可能的 --install-dir 参数更新内部路径
+    update_install_paths
 
     echo ""
     echo "=============================================="

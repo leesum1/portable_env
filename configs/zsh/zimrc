@@ -50,8 +50,8 @@ zmodule zsh-users/zsh-history-substring-search
 # 附加功能模块
 # -----------------------------------------------------------------------------
 
-# fzf 集成
-zmodule junegunn/fzf --source shell/completion.zsh --source shell/key-bindings.zsh
+# pvenv: Python 虚拟环境助手
+zmodule pvenv
 
 # z - 目录跳转
 zmodule agkozak/zsh-z

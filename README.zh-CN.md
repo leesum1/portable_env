@@ -101,6 +101,8 @@ git push origin v1.0.0
 cd ~/red_env_offline
 ./install.sh
 
+说明: 默认 Vim 配置为 `minimal`（即 basic 模式）。可用参数 `--install-dir` 指定安装目录，例如 `./install.sh --install-dir ~/myenv`。
+
 # 验证
 source ~/.zshrc
 zsh --version

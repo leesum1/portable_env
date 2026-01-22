@@ -27,7 +27,6 @@
     "ouch-org/ouch",
     "pemistahl/grex",
     "astral-sh/ruff",
-    "astral-sh/uv",
-    "mvdan/sh"
+    "astral-sh/uv"
   ]
 }

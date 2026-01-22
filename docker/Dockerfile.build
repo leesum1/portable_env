@@ -168,17 +168,12 @@ RUN git clone --depth 1 https://github.com/zimfw/environment.git /build/output/c
     git clone --depth 1 https://github.com/zsh-users/zsh-syntax-highlighting.git /build/output/cache/zim/modules/zsh-syntax-highlighting && \
     git clone --depth 1 https://github.com/zsh-users/zsh-autosuggestions.git /build/output/cache/zim/modules/zsh-autosuggestions && \
     git clone --depth 1 https://github.com/zsh-users/zsh-history-substring-search.git /build/output/cache/zim/modules/zsh-history-substring-search && \
-    git clone --depth 1 https://github.com/junegunn/fzf.git /build/output/cache/zim/modules/fzf && \
+    git clone --depth 1 https://github.com/zimfw/pvenv.git /build/output/cache/zim/modules/pvenv && \
     git clone --depth 1 https://github.com/agkozak/zsh-z.git /build/output/cache/zim/modules/zsh-z && \
     git clone --depth 1 https://github.com/chrissicool/zsh-256color.git /build/output/cache/zim/modules/zsh-256color && \
     find /build/output/cache/zim/modules -type d -name .git -prune -exec rm -rf {} +
 
-# fzf shell 支持文件
-RUN git clone --depth 1 https://github.com/junegunn/fzf.git /tmp/fzf && \
-    rm -rf /tmp/fzf/.git && \
-    mkdir -p /build/output/cache/fzf && \
-    cp -r /tmp/fzf/shell /build/output/cache/fzf/ && \
-    rm -rf /tmp/fzf
+# (removed) fzf shell 支持文件: fzf 的 zsh shell 支持不再包含于离线包
 
 # -----------------------------------------------------------------------------
 # 下载字体 (Nerd Fonts) - 只保留 Regular 字体节省空间

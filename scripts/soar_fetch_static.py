@@ -15,7 +15,7 @@ from platform import machine
 
 def print_help():
     """Print help message."""
-    help_text = """Usage: soar_fetch_static.py <owner/repo> --dest <dir> [--arch <x86_64|arm64>]
+    help_text = """Usage: soar_fetch_static.py <owner/repo> --dest <dir> [--arch <x86_64|arm64>] [--glob <pattern>]
 
 Downloads a tar archive (x86_64 or arm64) from GitHub Releases via `soar`/`soar-dl`,
 extracts it, and copies the extracted files into the specified destination directory.
@@ -26,6 +26,7 @@ Positional:
 Options:
   --dest DIR       Destination directory to copy extracted files into (required)
   --arch ARCH      Target architecture: x86_64 or arm64 (optional; auto-detected if omitted)
+  --glob PATTERN   Glob pattern to filter files (optional)
   -h, --help       Show this help and exit
 
 Behavior:
@@ -36,7 +37,8 @@ Behavior:
   - All extracted files are copied into the destination dir; ELF files get executable bit set.
 
 Examples:
-  ./scripts/soar_fetch_static.py Gaurav-Gosain/tuios --dest ./bin"""
+  ./scripts/soar_fetch_static.py Gaurav-Gosain/tuios --dest ./bin
+  ./scripts/soar_fetch_static.py owner/repo --dest ./bin --glob '*.tar.gz'"""
     print(help_text)
 
 
@@ -145,9 +147,10 @@ def check_soar_installed() -> str:
     return result
 
 
-def attempt_download_github(repo: str, regex: str, dest_dir: str) -> bool:
+def attempt_download_github(repo: str, regex: str, dest_dir: str, glob_pattern: str = None) -> bool:
     """
     Attempt to download from GitHub with --github flag and filter by the provided regex.
+    If glob_pattern is provided, it will be passed to soar.
     Returns True if successful, False otherwise.
     """
     soar_cmd = check_soar_installed()
@@ -162,6 +165,10 @@ def attempt_download_github(repo: str, regex: str, dest_dir: str) -> bool:
             "--extract-dir", dest_dir,
             "-o", tmpd
         ]
+        
+        # Add glob pattern if provided
+        if glob_pattern:
+            cmd.extend(["--glob", glob_pattern])
         
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, check=False)
@@ -183,15 +190,16 @@ def attempt_download_github(repo: str, regex: str, dest_dir: str) -> bool:
     return False
 
 
-def attempt_download_github_multi(repo: str, regexes: list, dest_dir: str) -> bool:
+def attempt_download_github_multi(repo: str, regexes: list, dest_dir: str, glob_pattern: str = None) -> bool:
     """
     Attempt to download from GitHub using multiple regex patterns.
+    If glob_pattern is provided, it will be passed to soar.
     Tries each regex in order until one succeeds.
     Returns True if any attempt succeeds, False if all fail.
     """
     for i, regex in enumerate(regexes, 1):
         print(f"[GitHub] Attempt {i}/{len(regexes)} with regex: {regex}", file=sys.stderr)
-        if attempt_download_github(repo, regex, dest_dir):
+        if attempt_download_github(repo, regex, dest_dir, glob_pattern):
             return True
     return False
 
@@ -229,9 +237,10 @@ def attempt_download_soar(pkg: str, dest_dir: str) -> bool:
         os.chdir(original_cwd)
 
 
-def attempt_download_generic(repo: str, regex: str, dest_dir: str) -> bool:
+def attempt_download_generic(repo: str, regex: str, dest_dir: str, glob_pattern: str = None) -> bool:
     """
     Attempt generic download from GitHub (any arch-matching binary, no musl requirement).
+    If glob_pattern is provided, it will be passed to soar.
     Returns True if successful, False otherwise.
     """
     soar_cmd = check_soar_installed()
@@ -246,6 +255,10 @@ def attempt_download_generic(repo: str, regex: str, dest_dir: str) -> bool:
             "--extract-dir", dest_dir,
             "-o", tmpd
         ]
+        
+        # Add glob pattern if provided
+        if glob_pattern:
+            cmd.extend(["--glob", glob_pattern])
         
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, check=False)
@@ -278,6 +291,7 @@ def parse_args():
     parser.add_argument("repo", nargs="?", help="GitHub repository (e.g. Gaurav-Gosain/tuios)")
     parser.add_argument("--dest", required=False, help="Destination directory to copy extracted files into")
     parser.add_argument("--arch", required=False, help="Target architecture: x86_64 or arm64")
+    parser.add_argument("--glob", required=False, help="Glob pattern to filter files")
     parser.add_argument("-h", "--help", action="store_true", help="Show this help and exit")
     
     args = parser.parse_args()
@@ -304,6 +318,7 @@ def main():
     dest = args.dest
     arch = args.arch if args.arch else detect_arch()
     arch = validate_arch(arch)
+    glob_pattern = args.glob if hasattr(args, 'glob') else None
     
     # Create destination directory
     dest_path = Path(dest)
@@ -315,7 +330,7 @@ def main():
     # Try GitHub first (musl only)
     print(f"Trying GitHub repo: {repo} (arch: {arch}, musl)")
     regexes = get_regex_list(arch)
-    if attempt_download_github_multi(repo, regexes, dest):
+    if attempt_download_github_multi(repo, regexes, dest, glob_pattern):
         print(f"Install complete. Files to: {dest}")
         sys.exit(0)
     
@@ -328,7 +343,7 @@ def main():
     # Fallback 2: Generic GitHub download (any arch-matching binary)
     print(f"Trying generic GitHub download: {repo} (arch: {arch}, any linux)")
     generic_regexes = get_generic_regex_list(arch)
-    if attempt_download_github_multi(repo, generic_regexes, dest):
+    if attempt_download_github_multi(repo, generic_regexes, dest, glob_pattern):
         print(f"Install complete. Files to: {dest}")
         sys.exit(0)
     
