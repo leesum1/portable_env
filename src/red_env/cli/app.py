@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from typing import Sequence
 
+from red_env.cli.commands.build import build_command
 from red_env.cli.commands.manifest import lint_command
 from red_env.cli.commands.profile import show_command
 
@@ -28,7 +29,15 @@ def build_parser() -> argparse.ArgumentParser:
     show_parser.add_argument("--manifest-root", default="manifests")
     show_parser.set_defaults(handler=show_command)
 
-    for name in ("build", "verify", "release"):
+    build_parser = subparsers.add_parser("build")
+    build_parser.add_argument("--profile", required=True)
+    build_parser.add_argument("--arch", required=True)
+    build_parser.add_argument("--manifest-root", default="manifests")
+    build_parser.add_argument("--build-root", default="build")
+    build_parser.add_argument("--dist-root", default="dist")
+    build_parser.set_defaults(handler=build_command)
+
+    for name in ("verify", "release"):
         command_parser = subparsers.add_parser(name)
         command_parser.set_defaults(handler=_noop)
 
