@@ -98,3 +98,33 @@ def test_manifest_lint_fails_when_package_references_unknown_profile(tmp_path: P
         main(["manifest", "lint", "--manifest-root", str(manifests)])
 
     assert "package broken references unknown profile missing" in str(excinfo.value)
+
+
+def test_manifest_lint_fails_on_profile_cycle(tmp_path: Path):
+    manifests = tmp_path / "manifests"
+    _write_manifest(
+        manifests,
+        '\n'.join(
+            [
+                '[profiles.a]',
+                'packages = ["pkg"]',
+                'extends = ["b"]',
+                '',
+                '[profiles.b]',
+                'packages = ["pkg"]',
+                'extends = ["a"]',
+            ]
+        ),
+        [
+            (
+                "pkg",
+                'id = "pkg"\ndescription = "pkg"\nprofiles = ["a", "b"]\narchitectures = ["x86_64"]\n'
+                '[source]\ntype = "github_release"\nrepo = "example/pkg"\n[strategy]\ntype = "direct_binary"\n',
+            ),
+        ],
+    )
+
+    with pytest.raises(ValueError) as excinfo:
+        main(["manifest", "lint", "--manifest-root", str(manifests)])
+
+    assert "cyclic profile inheritance" in str(excinfo.value)
