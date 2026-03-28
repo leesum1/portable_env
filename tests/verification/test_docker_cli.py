@@ -13,7 +13,16 @@ def test_verifier_build_command_uses_new_dockerfile_and_artifact_name(tmp_path: 
         dockerfile=Path("docker/verifier.Dockerfile"),
     )
 
-    assert command[:4] == ["docker", "buildx", "build", "--platform"]
-    assert "linux/amd64" in command
-    assert "docker/verifier.Dockerfile" in command
-    assert str(artifact) in command
+    assert command == [
+        "docker",
+        "buildx",
+        "build",
+        "--platform",
+        "linux/amd64",
+        "-f",
+        "docker/verifier.Dockerfile",
+        "--build-arg",
+        f"PACKAGE_FILE={artifact}",
+        "--load",
+        ".",
+    ]
