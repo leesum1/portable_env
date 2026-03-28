@@ -29,6 +29,13 @@ def _stage_static_assets(manifest_root: Path, offline_root: Path) -> None:
     shutil.copytree(installer_src, offline_root / "installer", dirs_exist_ok=True)
 
 
+def _installed_files(bundle_root: Path) -> list[str]:
+    bin_root = bundle_root / "bin"
+    if not bin_root.exists():
+        return []
+    return sorted(str(path.relative_to(bundle_root)) for path in bin_root.rglob("*") if path.is_file())
+
+
 def build_command(args) -> int:
     manifest_root = Path(args.manifest_root)
     manifest = load_manifest(manifest_root)
@@ -59,7 +66,13 @@ def build_command(args) -> int:
         strategy_handler(package, downloaded_asset, bundle_root)
 
     _stage_static_assets(manifest_root.resolve(), offline_root)
-    write_bundle_metadata(bundle_root, args.profile, args.arch, package_ids)
+    write_bundle_metadata(
+        bundle_root,
+        args.profile,
+        args.arch,
+        package_ids,
+        _installed_files(bundle_root),
+    )
     (bundle_root / "selected-packages.txt").write_text("\n".join(package_ids) + "\n", encoding="utf-8")
 
     tarball_path, checksum_path = build_artifact(offline_root, Path(args.dist_root), args.profile, args.arch)

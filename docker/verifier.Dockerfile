@@ -29,10 +29,11 @@ RUN mkdir -p /verify/unpacked \
     && test -d /root/.red_env/configs \
     && python3 -c "import json, os, pathlib; \
 manifest = json.loads(pathlib.Path('/verify/unpacked/red_env_offline/bundle/bundle-manifest.json').read_text(encoding='utf-8')); \
-packages = manifest.get('packages', []); \
-assert packages, 'bundle-manifest has no packages'; \
-bin_dir = pathlib.Path('/root/.red_env/bin'); \
-assert bin_dir.is_dir(), 'installed bin directory missing'; \
-installed = [pkg for pkg in packages if (bin_dir / pkg).exists()]; \
-assert installed, f'no installed package binaries found for metadata packages: {packages}'; \
-assert all(os.access(bin_dir / pkg, os.X_OK) for pkg in installed), f'non-executable binaries in: {installed}'"
+installed_files = manifest.get('installed_files', []); \
+assert installed_files, 'bundle-manifest has no installed_files'; \
+install_root = pathlib.Path('/root/.red_env'); \
+assert install_root.is_dir(), 'install root missing'; \
+missing = [relative for relative in installed_files if not (install_root / relative).exists()]; \
+assert not missing, f'missing installed files: {missing}'; \
+non_executable = [relative for relative in installed_files if (install_root / relative).is_file() and not os.access(install_root / relative, os.X_OK)]; \
+assert not non_executable, f'non-executable installed files: {non_executable}'"

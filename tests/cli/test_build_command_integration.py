@@ -62,3 +62,11 @@ def test_build_command_stages_tools_configs_installer_and_metadata(tmp_path: Pat
         assert manifest_payload["profile"] == "core"
         assert manifest_payload["arch"] == "x86_64"
         assert manifest_payload["packages"] == ["bat", "delta", "fd", "fzf", "rg", "zsh"]
+        assert manifest_payload["installed_files"] == [
+            "bin/bat",
+            "bin/delta",
+            "bin/fd",
+            "bin/fzf",
+            "bin/rg",
+            "bin/zsh",
+        ]

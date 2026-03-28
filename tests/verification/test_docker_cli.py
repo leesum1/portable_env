@@ -88,4 +88,5 @@ def test_verifier_dockerfile_uses_bundle_metadata_not_hardcoded_binary_names():
     dockerfile = Path("docker/verifier.Dockerfile").read_text(encoding="utf-8")
 
     assert "bundle-manifest.json" in dockerfile
+    assert "installed_files" in dockerfile
     assert "fzf" not in dockerfile

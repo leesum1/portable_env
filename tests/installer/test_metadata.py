@@ -5,13 +5,14 @@ from pathlib import Path
 from red_env.installer.metadata import write_bundle_metadata
 
 
-def test_write_bundle_metadata_records_profile_arch_and_packages(tmp_path: Path):
+def test_write_bundle_metadata_records_profile_arch_packages_and_installed_files(tmp_path: Path):
     bundle_root = tmp_path / "bundle"
     metadata_path = write_bundle_metadata(
         bundle_root=bundle_root,
         profile="core",
         arch="x86_64",
         package_ids=["fzf", "bat", "rg"],
+        installed_files=["bin/bat", "bin/fzf", "bin/rg"],
     )
 
     assert metadata_path == bundle_root / "bundle-manifest.json"
@@ -21,6 +22,7 @@ def test_write_bundle_metadata_records_profile_arch_and_packages(tmp_path: Path)
     assert payload["profile"] == "core"
     assert payload["arch"] == "x86_64"
     assert payload["packages"] == ["fzf", "bat", "rg"]
+    assert payload["installed_files"] == ["bin/bat", "bin/fzf", "bin/rg"]
 
 
 def test_installer_scripts_are_executable():
