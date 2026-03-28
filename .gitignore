@@ -1,6 +1,10 @@
 build/
 dist/
 logs/
+.worktrees/
+__pycache__/
+*.pyc
+.pytest_cache/
 *.tmp
 *.temp
 .DS_Store
