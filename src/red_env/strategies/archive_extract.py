@@ -11,6 +11,7 @@ def apply_archive_extract(package: PackageSpec, downloaded_asset: Path, bundle_r
     target_dir = bundle_root / package.strategy.extract["target_dir"]
     target_dir.mkdir(parents=True, exist_ok=True)
     include = set(package.strategy.extract["include"])
+    remaining = set(include)
     written: list[Path] = []
 
     with tarfile.open(downloaded_asset, "r:*") as archive:
@@ -25,5 +26,10 @@ def apply_archive_extract(package: PackageSpec, downloaded_asset: Path, bundle_r
                 shutil.copyfileobj(extracted, handle)
             target_path.chmod(member.mode or 0o755)
             written.append(target_path)
+            remaining.discard(member_name)
+
+    if remaining:
+        missing = ", ".join(sorted(remaining))
+        raise ValueError(f"missing includes: {missing}")
 
     return written
