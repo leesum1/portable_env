@@ -82,3 +82,10 @@ def test_run_verifier_builds_using_staged_context_for_outside_artifact(tmp_path:
     assert captured["check"] is True
     assert f"PACKAGE_FILE={artifact.name}" in command
     assert command[-1] != "."
+
+
+def test_verifier_dockerfile_uses_bundle_metadata_not_hardcoded_binary_names():
+    dockerfile = Path("docker/verifier.Dockerfile").read_text(encoding="utf-8")
+
+    assert "bundle-manifest.json" in dockerfile
+    assert "fzf" not in dockerfile

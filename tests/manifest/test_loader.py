@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from red_env.manifest.loader import load_manifest
 
 
@@ -54,3 +56,35 @@ def test_load_manifest_reads_root_profiles_bundle_and_packages(tmp_path: Path):
     assert manifest.profiles["core"].packages == ["fzf"]
     assert manifest.packages["fzf"].source.repo == "junegunn/fzf"
     assert manifest.packages["fzf"].strategy.type == "archive_extract"
+
+
+def test_load_manifest_rejects_unsupported_manifest_version(tmp_path: Path):
+    manifests = tmp_path / "manifests"
+    packages = manifests / "packages"
+    packages.mkdir(parents=True)
+
+    (manifests / "manifest.toml").write_text(
+        'manifest_version = 2\npackage_dir = "packages"\n',
+        encoding="utf-8",
+    )
+    (manifests / "profiles.toml").write_text('[profiles.core]\npackages = ["fzf"]\n', encoding="utf-8")
+    (manifests / "bundle.toml").write_text('[layout]\nbin = "bin"\n', encoding="utf-8")
+    (packages / "fzf.toml").write_text(
+        '\n'.join(
+            [
+                'id = "fzf"',
+                'description = "fzf"',
+                'profiles = ["core"]',
+                'architectures = ["x86_64"]',
+                '[source]',
+                'type = "github_release"',
+                'repo = "junegunn/fzf"',
+                '[strategy]',
+                'type = "direct_binary"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="unsupported manifest_version: 2"):
+        load_manifest(manifests)

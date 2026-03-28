@@ -15,6 +15,9 @@ def load_manifest(manifest_root: Path) -> ManifestSpec:
     manifest_data = _read_toml(manifest_root / "manifest.toml")
     profiles_data = _read_toml(manifest_root / "profiles.toml")
     bundle_data = _read_toml(manifest_root / "bundle.toml")
+    manifest_version = int(manifest_data["manifest_version"])
+    if manifest_version != 1:
+        raise ValueError(f"unsupported manifest_version: {manifest_version}")
 
     package_dir = manifest_root / manifest_data["package_dir"]
     packages: dict[str, PackageSpec] = {}
@@ -44,7 +47,7 @@ def load_manifest(manifest_root: Path) -> ManifestSpec:
     }
 
     return ManifestSpec(
-        manifest_version=int(manifest_data["manifest_version"]),
+        manifest_version=manifest_version,
         bundle=BundleSpec(layout=dict(bundle_data["layout"])),
         profiles=profiles,
         packages=packages,

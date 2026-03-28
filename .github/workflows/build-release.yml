@@ -18,16 +18,19 @@ jobs:
         with:
           python-version: "3.11"
       - run: python -m pip install -e .[dev]
-      - run: mkdir -p dist
-      - run: python -m red_env manifest lint
-      - run: python -m red_env build --profile core --arch x86_64
-      - run: python -m red_env verify --artifact dist/red_env_core_x86_64.tar.gz --arch x86_64
+      - run: mkdir -p "$GITHUB_WORKSPACE/build" "$GITHUB_WORKSPACE/dist"
+      - run: python -m red_env manifest lint --manifest-root "$GITHUB_WORKSPACE/manifests"
+        working-directory: /tmp
+      - run: python -m red_env build --profile core --arch x86_64 --manifest-root "$GITHUB_WORKSPACE/manifests" --build-root "$GITHUB_WORKSPACE/build" --dist-root "$GITHUB_WORKSPACE/dist"
+        working-directory: /tmp
+      - run: python -m red_env verify --artifact "$GITHUB_WORKSPACE/dist/red_env_core_x86_64.tar.gz" --arch x86_64 --dockerfile "$GITHUB_WORKSPACE/docker/verifier.Dockerfile"
+        working-directory: /tmp
       - uses: actions/upload-artifact@v4
         with:
           name: red_env_core_x86_64
           path: |
-            dist/red_env_core_x86_64.tar.gz
-            dist/red_env_core_x86_64.tar.gz.sha256
+            ${{ github.workspace }}/dist/red_env_core_x86_64.tar.gz
+            ${{ github.workspace }}/dist/red_env_core_x86_64.tar.gz.sha256
           if-no-files-found: error
 
   build-arm64:
@@ -38,16 +41,19 @@ jobs:
         with:
           python-version: "3.11"
       - run: python -m pip install -e .[dev]
-      - run: mkdir -p dist
-      - run: python -m red_env manifest lint
-      - run: python -m red_env build --profile core --arch arm64
-      - run: python -m red_env verify --artifact dist/red_env_core_arm64.tar.gz --arch arm64
+      - run: mkdir -p "$GITHUB_WORKSPACE/build" "$GITHUB_WORKSPACE/dist"
+      - run: python -m red_env manifest lint --manifest-root "$GITHUB_WORKSPACE/manifests"
+        working-directory: /tmp
+      - run: python -m red_env build --profile core --arch arm64 --manifest-root "$GITHUB_WORKSPACE/manifests" --build-root "$GITHUB_WORKSPACE/build" --dist-root "$GITHUB_WORKSPACE/dist"
+        working-directory: /tmp
+      - run: python -m red_env verify --artifact "$GITHUB_WORKSPACE/dist/red_env_core_arm64.tar.gz" --arch arm64 --dockerfile "$GITHUB_WORKSPACE/docker/verifier.Dockerfile"
+        working-directory: /tmp
       - uses: actions/upload-artifact@v4
         with:
           name: red_env_core_arm64
           path: |
-            dist/red_env_core_arm64.tar.gz
-            dist/red_env_core_arm64.tar.gz.sha256
+            ${{ github.workspace }}/dist/red_env_core_arm64.tar.gz
+            ${{ github.workspace }}/dist/red_env_core_arm64.tar.gz.sha256
           if-no-files-found: error
 
   release:

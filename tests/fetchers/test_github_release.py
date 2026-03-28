@@ -1,9 +1,12 @@
+import io
+from urllib.error import HTTPError
 from pathlib import Path
 import tomllib
 
 import pytest
 
 from red_env.fetchers.github_release import download_package_asset, select_asset_url
+from red_env.fetchers import github_release
 from red_env.manifest.models import PackageSpec, SourceSpec, StrategySpec
 
 
@@ -79,3 +82,76 @@ def test_zsh_manifest_regex_selects_linux_assets_not_windows_variants():
 
     assert select_asset_url(release_payload, x86_regex) == "https://example.invalid/zsh-linux-x86_64.tar.gz"
     assert select_asset_url(release_payload, arm_regex) == "https://example.invalid/zsh-linux-aarch64.tar.gz"
+
+
+def test_fetch_json_adds_bearer_header_from_gh_token(monkeypatch):
+    monkeypatch.setenv("GH_TOKEN", "gh-token-value")
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    captured: dict[str, object] = {}
+
+    class DummyResponse(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            self.close()
+
+    def fake_urlopen(request, timeout):
+        captured["authorization"] = request.get_header("Authorization")
+        captured["accept"] = request.get_header("Accept")
+        captured["user_agent"] = request.headers.get("User-agent")
+        return DummyResponse(b'{"assets": []}')
+
+    monkeypatch.setattr("red_env.fetchers.github_release.urllib.request.urlopen", fake_urlopen)
+
+    payload = github_release._fetch_json("https://api.github.com/repos/owner/repo/releases/latest")
+    assert payload == {"assets": []}
+    assert captured["authorization"] == "Bearer gh-token-value"
+    assert captured["accept"] == "application/vnd.github+json"
+    assert captured["user_agent"] == "red-env/0.1.0"
+
+
+def test_fetch_json_falls_back_to_github_token(monkeypatch):
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.setenv("GITHUB_TOKEN", "github-token-value")
+    captured: dict[str, object] = {}
+
+    class DummyResponse(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            self.close()
+
+    def fake_urlopen(request, timeout):
+        captured["authorization"] = request.get_header("Authorization")
+        return DummyResponse(b'{"assets": []}')
+
+    monkeypatch.setattr("red_env.fetchers.github_release.urllib.request.urlopen", fake_urlopen)
+
+    github_release._fetch_json("https://api.github.com/repos/owner/repo/releases/latest")
+    assert captured["authorization"] == "Bearer github-token-value"
+
+
+def test_fetch_json_raises_clear_error_on_rate_limit(monkeypatch):
+    monkeypatch.setenv("GH_TOKEN", "gh-token-value")
+
+    def fake_urlopen(request, timeout):
+        raise HTTPError(
+            url=request.full_url,
+            code=403,
+            msg="rate limit exceeded",
+            hdrs={"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "9999999999"},
+            fp=None,
+        )
+
+    monkeypatch.setattr("red_env.fetchers.github_release.urllib.request.urlopen", fake_urlopen)
+
+    with pytest.raises(RuntimeError) as excinfo:
+        github_release._fetch_json("https://api.github.com/repos/owner/repo/releases/latest")
+
+    message = str(excinfo.value)
+    assert "GitHub API rate limit exceeded" in message
+    assert "https://api.github.com/repos/owner/repo/releases/latest" in message
+    assert "remaining=0" in message
+    assert "auth_token=yes" in message
