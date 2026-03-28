@@ -1,0 +1,19 @@
+id = "zsh"
+description = "prebuilt zsh"
+profiles = ["core"]
+architectures = ["x86_64", "arm64"]
+
+[source]
+type = "github_release"
+repo = "romkatv/zsh-bin"
+
+[strategy]
+type = "archive_extract"
+
+[strategy.match]
+x86_64 = '(?i).*x86_64.*tar.gz$'
+arm64 = '(?i).*aarch64.*tar.gz$'
+
+[strategy.extract]
+include = ["zsh"]
+target_dir = "bin"
