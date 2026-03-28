@@ -6,10 +6,9 @@ from typing import Sequence
 from red_env.cli.commands.build import build_command
 from red_env.cli.commands.manifest import lint_command
 from red_env.cli.commands.profile import show_command
+from red_env.cli.commands.release import release_command
+from red_env.cli.commands.verify import verify_command
 
-
-def _noop(_: argparse.Namespace) -> int:
-    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -37,9 +36,14 @@ def build_parser() -> argparse.ArgumentParser:
     build_parser.add_argument("--dist-root", default="dist")
     build_parser.set_defaults(handler=build_command)
 
-    for name in ("verify", "release"):
-        command_parser = subparsers.add_parser(name)
-        command_parser.set_defaults(handler=_noop)
+    verify_parser = subparsers.add_parser("verify")
+    verify_parser.add_argument("--artifact", required=True)
+    verify_parser.add_argument("--arch", required=True)
+    verify_parser.set_defaults(handler=verify_command)
+
+    release_parser = subparsers.add_parser("release")
+    release_parser.add_argument("--artifact", required=True)
+    release_parser.set_defaults(handler=release_command)
 
     return parser
 
