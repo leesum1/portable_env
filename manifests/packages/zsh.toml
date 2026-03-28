@@ -11,8 +11,8 @@ repo = "romkatv/zsh-bin"
 type = "archive_extract"
 
 [strategy.match]
-x86_64 = '(?i).*x86_64.*tar.gz$'
-arm64 = '(?i).*aarch64.*tar.gz$'
+x86_64 = '(?i)^zsh-.*-linux-x86_64\.tar\.gz$'
+arm64 = '(?i)^zsh-.*-linux-aarch64\.tar\.gz$'
 
 [strategy.extract]
 include = ["zsh"]

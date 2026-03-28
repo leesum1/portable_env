@@ -1,4 +1,5 @@
 from pathlib import Path
+import tomllib
 
 import pytest
 
@@ -46,3 +47,35 @@ def test_download_package_asset_raises_for_unknown_arch(tmp_path: Path):
     destination = tmp_path / "asset"
     with pytest.raises(ValueError, match="unsupported architecture"):
         download_package_asset(package, "arm64", destination)
+
+
+def test_zsh_manifest_regex_selects_linux_assets_not_windows_variants():
+    manifest_path = Path("manifests/packages/zsh.toml")
+    manifest = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
+
+    release_payload = {
+        "assets": [
+            {
+                "name": "zsh-x86_64.tar.gz",
+                "browser_download_url": "https://example.invalid/zsh-cygwin-x86_64.tar.gz",
+            },
+            {
+                "name": "zsh-aarch64.tar.gz",
+                "browser_download_url": "https://example.invalid/zsh-cygwin-aarch64.tar.gz",
+            },
+            {
+                "name": "zsh-5.8-linux-x86_64.tar.gz",
+                "browser_download_url": "https://example.invalid/zsh-linux-x86_64.tar.gz",
+            },
+            {
+                "name": "zsh-5.8-linux-aarch64.tar.gz",
+                "browser_download_url": "https://example.invalid/zsh-linux-aarch64.tar.gz",
+            },
+        ]
+    }
+
+    x86_regex = manifest["strategy"]["match"]["x86_64"]
+    arm_regex = manifest["strategy"]["match"]["arm64"]
+
+    assert select_asset_url(release_payload, x86_regex) == "https://example.invalid/zsh-linux-x86_64.tar.gz"
+    assert select_asset_url(release_payload, arm_regex) == "https://example.invalid/zsh-linux-aarch64.tar.gz"
