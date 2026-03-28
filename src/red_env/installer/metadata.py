@@ -5,6 +5,7 @@ from pathlib import Path
 
 
 def write_bundle_metadata(bundle_root: Path, profile: str, arch: str, package_ids: list[str]) -> Path:
+    bundle_root.mkdir(parents=True, exist_ok=True)
     metadata_path = bundle_root / "bundle-manifest.json"
     metadata_path.write_text(
         json.dumps(
