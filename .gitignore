@@ -4,6 +4,7 @@ output_x86_64/
 output_arm64/
 dist/
 logs/
+.worktrees/
 
 # Docker 构建临时文件
 *.tmp
