@@ -3,6 +3,9 @@ from __future__ import annotations
 import argparse
 from typing import Sequence
 
+from red_env.cli.commands.manifest import lint_command
+from red_env.cli.commands.profile import show_command
+
 
 def _noop(_: argparse.Namespace) -> int:
     return 0
@@ -12,7 +15,20 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="red_env")
     subparsers = parser.add_subparsers(dest="command")
 
-    for name in ("manifest", "profile", "build", "verify", "release"):
+    manifest_parser = subparsers.add_parser("manifest")
+    manifest_subcommands = manifest_parser.add_subparsers(dest="manifest_command")
+    lint_parser = manifest_subcommands.add_parser("lint")
+    lint_parser.add_argument("--manifest-root", default="manifests")
+    lint_parser.set_defaults(handler=lint_command)
+
+    profile_parser = subparsers.add_parser("profile")
+    profile_subcommands = profile_parser.add_subparsers(dest="profile_command")
+    show_parser = profile_subcommands.add_parser("show")
+    show_parser.add_argument("profile_name")
+    show_parser.add_argument("--manifest-root", default="manifests")
+    show_parser.set_defaults(handler=show_command)
+
+    for name in ("build", "verify", "release"):
         command_parser = subparsers.add_parser(name)
         command_parser.set_defaults(handler=_noop)
 
