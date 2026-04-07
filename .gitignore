@@ -2,6 +2,7 @@ build/
 dist/
 logs/
 .worktrees/
+tmp/
 __pycache__/
 *.pyc
 .pytest_cache/
