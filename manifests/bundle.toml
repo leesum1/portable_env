@@ -1,0 +1,6 @@
+[layout]
+bin = "bin"
+share = "share"
+configs = "configs"
+cache = "cache"
+fonts = "fonts"

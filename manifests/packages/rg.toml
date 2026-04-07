@@ -1,0 +1,19 @@
+id = "rg"
+description = "ripgrep"
+profiles = ["core"]
+architectures = ["x86_64", "arm64"]
+
+[source]
+type = "github_release"
+repo = "BurntSushi/ripgrep"
+
+[strategy]
+type = "archive_extract"
+
+[strategy.match]
+x86_64 = '(?i).*x86_64.*unknown-linux-musl.*tar.gz$'
+arm64 = '(?i).*aarch64.*unknown-linux-musl.*tar.gz$'
+
+[strategy.extract]
+include = ["rg"]
+target_dir = "bin"

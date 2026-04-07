@@ -1,0 +1,10 @@
+[profiles.core]
+packages = ["fzf", "bat", "rg", "fd", "delta", "zsh"]
+
+[profiles.extended]
+extends = ["core"]
+packages = []
+
+[profiles.experimental]
+extends = ["extended"]
+packages = []

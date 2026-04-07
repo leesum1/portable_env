@@ -1,0 +1,19 @@
+id = "fzf"
+description = "fzf fuzzy finder"
+profiles = ["core"]
+architectures = ["x86_64", "arm64"]
+
+[source]
+type = "github_release"
+repo = "junegunn/fzf"
+
+[strategy]
+type = "archive_extract"
+
+[strategy.match]
+x86_64 = '(?i).*linux.*amd64.*tar.gz$'
+arm64 = '(?i).*linux.*arm64.*tar.gz$'
+
+[strategy.extract]
+include = ["fzf"]
+target_dir = "bin"

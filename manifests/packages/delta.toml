@@ -1,0 +1,19 @@
+id = "delta"
+description = "git delta"
+profiles = ["core"]
+architectures = ["x86_64", "arm64"]
+
+[source]
+type = "github_release"
+repo = "dandavison/delta"
+
+[strategy]
+type = "archive_extract"
+
+[strategy.match]
+x86_64 = '(?i).*x86_64.*unknown-linux-musl.*tar.gz$'
+arm64 = '(?i).*aarch64.*unknown-linux-musl.*tar.gz$'
+
+[strategy.extract]
+include = ["delta"]
+target_dir = "bin"
