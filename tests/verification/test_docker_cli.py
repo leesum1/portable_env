@@ -106,14 +106,15 @@ def test_verifier_run_command_launches_interactive_shell_for_arch():
         "-e",
         "TERMINFO_DIRS=/etc/terminfo:/lib/terminfo:/usr/share/terminfo",
         "-e",
-        "TERM=xterm",
+        "TERM=xterm-256color",
         "-e",
         "RED_ENV_DISABLE_ZSH_256COLOR=1",
         "--entrypoint",
-        "bash",
+        "zsh",
         "red-env-verify:test",
-        "-lc",
-        "rm -f /root/.red_env/zim/init.zsh /root/.red_env/zim/login_init.zsh && exec bash",
+        "-l",
+        "-c",
+        "stty erase ^? && exec zsh -l",
     ]
 
 
@@ -154,14 +155,15 @@ def test_run_verifier_interactive_builds_then_runs_shell(tmp_path: Path, monkeyp
         "-e",
         "TERMINFO_DIRS=/etc/terminfo:/lib/terminfo:/usr/share/terminfo",
         "-e",
-        "TERM=xterm",
+        "TERM=xterm-256color",
         "-e",
         "RED_ENV_DISABLE_ZSH_256COLOR=1",
         "--entrypoint",
-        "bash",
+        "zsh",
         captured[0][captured[0].index("-t") + 1],
-        "-lc",
-        "rm -f /root/.red_env/zim/init.zsh /root/.red_env/zim/login_init.zsh && exec bash",
+        "-l",
+        "-c",
+        "stty erase ^? && exec zsh -l",
     ]
 
 

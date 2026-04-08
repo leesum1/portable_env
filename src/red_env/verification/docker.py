@@ -82,14 +82,15 @@ def verifier_run_command(*, arch: str, image_tag: str) -> list[str]:
         "-e",
         "TERMINFO_DIRS=/etc/terminfo:/lib/terminfo:/usr/share/terminfo",
         "-e",
-        "TERM=xterm",
+        "TERM=xterm-256color",
         "-e",
         "RED_ENV_DISABLE_ZSH_256COLOR=1",
         "--entrypoint",
-        "bash",
+        "zsh",
         image_tag,
-        "-lc",
-        "rm -f /root/.red_env/zim/init.zsh /root/.red_env/zim/login_init.zsh && exec bash",
+        "-l",
+        "-c",
+        "stty erase ^? && exec zsh -l",
     ]
 
 
