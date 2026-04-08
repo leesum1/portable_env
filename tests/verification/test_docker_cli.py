@@ -106,6 +106,8 @@ def test_verifier_run_command_launches_interactive_shell_for_arch():
         "--entrypoint",
         "bash",
         "red-env-verify:test",
+        "-ic",
+        "stty erase ^? 2>/dev/null; exec bash -i",
     ]
 
 
@@ -146,6 +148,8 @@ def test_run_verifier_interactive_builds_then_runs_shell(tmp_path: Path, monkeyp
         "--entrypoint",
         "bash",
         captured[0][captured[0].index("-t") + 1],
+        "-ic",
+        "stty erase ^? 2>/dev/null; exec bash -i",
     ]
 
 

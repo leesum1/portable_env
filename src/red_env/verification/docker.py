@@ -82,6 +82,8 @@ def verifier_run_command(*, arch: str, image_tag: str) -> list[str]:
         "--entrypoint",
         "bash",
         image_tag,
+        "-ic",
+        "stty erase ^? 2>/dev/null; exec bash -i",
     ]
 
 
