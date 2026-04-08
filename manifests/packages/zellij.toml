@@ -1,0 +1,19 @@
+id = "zellij"
+description = "terminal workspace"
+profiles = ["extended"]
+architectures = ["x86_64", "arm64"]
+
+[source]
+type = "github_release"
+repo = "zellij-org/zellij"
+
+[strategy]
+type = "archive_extract"
+
+[strategy.match]
+x86_64 = '(?i)^zellij-x86_64-unknown-linux-musl\.tar\.gz$'
+arm64 = '(?i)^zellij-aarch64-unknown-linux-musl\.tar\.gz$'
+
+[strategy.extract]
+include = ["zellij"]
+target_dir = "bin"

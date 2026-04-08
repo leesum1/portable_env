@@ -16,7 +16,11 @@ copy_contents() {
 
 mkdir -p "${INSTALL_DIR}"
 copy_contents "${SCRIPT_DIR}/../configs" "${INSTALL_DIR}/configs"
-copy_contents "${BUNDLE_DIR}/bin" "${INSTALL_DIR}/bin"
-copy_contents "${BUNDLE_DIR}/share" "${INSTALL_DIR}/share"
+for path in "${BUNDLE_DIR}"/*; do
+  if [ -e "$path" ]; then
+    name="$(basename "$path")"
+    copy_contents "$path" "${INSTALL_DIR}/${name}"
+  fi
+done
 
 echo "Installed red_env into ${INSTALL_DIR}"

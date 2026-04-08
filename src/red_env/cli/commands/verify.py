@@ -7,6 +7,9 @@ from red_env.verification.docker import run_verifier
 
 def verify_command(args) -> int:
     artifact = Path(args.artifact)
-    run_verifier(artifact, args.arch, Path(args.dockerfile))
+    run_verifier(artifact, args.arch, Path(args.dockerfile), interactive=args.interactive)
+    if args.interactive:
+        print(f"interactive verifier ready for {artifact}")
+        return 0
     print(f"verified {artifact}")
     return 0

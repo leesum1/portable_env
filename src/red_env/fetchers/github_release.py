@@ -22,15 +22,27 @@ def select_asset_url(release_payload: dict, regex: str) -> str:
 
 
 def download_package_asset(package: PackageSpec, arch: str, destination: Path) -> Path:
-    try:
-        asset_match = package.strategy.match[arch]
-    except KeyError as exc:
-        raise ValueError(f"unsupported architecture: {arch}") from exc
-
-    api_url = f"https://api.github.com/repos/{package.source.repo}/releases/latest"
-    release_payload = _fetch_json(api_url)
-    asset_url = select_asset_url(release_payload, asset_match)
     destination.parent.mkdir(parents=True, exist_ok=True)
+    if package.source.type == "github_release":
+        try:
+            asset_match = package.strategy.match[arch]
+        except KeyError as exc:
+            raise ValueError(f"unsupported architecture: {arch}") from exc
+
+        api_url = f"https://api.github.com/repos/{package.source.repo}/releases/latest"
+        release_payload = _fetch_json(api_url)
+        asset_url = select_asset_url(release_payload, asset_match)
+        _download_to_path(asset_url, destination)
+        return destination
+
+    if package.source.type == "github_archive":
+        ref = package.source.ref or "master"
+        archive_url = f"https://github.com/{package.source.repo}/archive/refs/heads/{ref}.tar.gz"
+        _download_to_path(archive_url, destination)
+        return destination
+
+    raise ValueError(f"unsupported source type: {package.source.type}")
+
     _download_to_path(asset_url, destination)
     return destination
 

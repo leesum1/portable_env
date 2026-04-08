@@ -13,8 +13,22 @@ from red_env.strategies.registry import STRATEGY_REGISTRY
 
 
 def _download_destination(package_id: str, strategy_type: str, downloads_dir: Path, arch: str) -> Path:
-    extension = ".tar.gz" if strategy_type == "archive_extract" else ".bin"
+    extension = ".tar.gz" if strategy_type in {"archive_extract", "archive_tree"} else ".bin"
     return downloads_dir / f"{package_id}-{arch}{extension}"
+
+
+def _download_suffix(args_arch: str, package) -> str:
+    if package.source.type == "github_archive":
+        return ".tar.gz"
+    match = package.strategy.match.get(args_arch, "")
+    lowered = match.lower()
+    if ".zip" in lowered:
+        return ".zip"
+    if ".tar.xz" in lowered:
+        return ".tar.xz"
+    if package.strategy.type in {"archive_extract", "archive_tree"}:
+        return ".tar.gz"
+    return ".bin"
 
 
 def _stage_static_assets(manifest_root: Path, offline_root: Path) -> None:
@@ -60,7 +74,7 @@ def build_command(args) -> int:
         if args.arch not in package.architectures:
             raise ValueError(f"package {package.id} does not support architecture {args.arch}")
 
-        destination = _download_destination(package.id, package.strategy.type, downloads_dir, args.arch)
+        destination = downloads_dir / f"{package.id}-{args.arch}{_download_suffix(args.arch, package)}"
         downloaded_asset = download_package_asset(package, args.arch, destination)
         strategy_handler = STRATEGY_REGISTRY[package.strategy.type]
         strategy_handler(package, downloaded_asset, bundle_root)

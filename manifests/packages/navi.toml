@@ -1,0 +1,19 @@
+id = "navi"
+description = "interactive cheatsheet tool"
+profiles = ["extended"]
+architectures = ["x86_64", "arm64"]
+
+[source]
+type = "github_release"
+repo = "denisidoro/navi"
+
+[strategy]
+type = "archive_extract"
+
+[strategy.match]
+x86_64 = '(?i)^navi-.*-x86_64-unknown-linux-musl\.tar\.gz$'
+arm64 = '(?i)^navi-.*-aarch64-unknown-linux-gnu\.tar\.gz$'
+
+[strategy.extract]
+include = ["navi"]
+target_dir = "bin"

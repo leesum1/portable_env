@@ -1,0 +1,16 @@
+id = "zimfw-completion"
+description = "zimfw completion module"
+profiles = ["extended"]
+architectures = ["x86_64", "arm64"]
+
+[source]
+type = "github_archive"
+repo = "zimfw/completion"
+ref = "master"
+
+[strategy]
+type = "archive_tree"
+
+[strategy.extract]
+target_dir = "cache/zim/modules/completion"
+strip_components = 1

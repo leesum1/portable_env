@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 class SourceSpec:
     type: str
     repo: str
+    ref: str | None = None
 
 
 @dataclass(frozen=True)

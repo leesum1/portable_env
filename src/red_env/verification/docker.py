@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 import tempfile
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -36,8 +37,15 @@ def prepare_verifier_context(artifact: Path, dockerfile: Path, context_dir: Path
     )
 
 
-def verifier_build_command(*, arch: str, dockerfile: Path, package_file: str, context_dir: Path) -> list[str]:
-    return [
+def verifier_build_command(
+    *,
+    arch: str,
+    dockerfile: Path,
+    package_file: str,
+    context_dir: Path,
+    image_tag: str | None = None,
+) -> list[str]:
+    command = [
         "docker",
         "buildx",
         "build",
@@ -50,17 +58,57 @@ def verifier_build_command(*, arch: str, dockerfile: Path, package_file: str, co
         "--load",
         str(context_dir),
     ]
+    if image_tag is not None:
+        command[-1:-1] = ["-t", image_tag]
+    return command
 
 
-def run_verifier(artifact: Path, arch: str, dockerfile: Path) -> None:
+def verifier_image_tag(arch: str) -> str:
+    return f"red-env-verify:{arch}-{uuid.uuid4().hex[:12]}"
+
+
+def verifier_run_command(*, arch: str, image_tag: str) -> list[str]:
+    return [
+        "docker",
+        "run",
+        "--rm",
+        "-it",
+        "--platform",
+        _platform_for_arch(arch),
+        "-e",
+        "PATH=/root/.red_env/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "-e",
+        "ZDOTDIR=/root/.red_env/configs/zsh",
+        "-e",
+        "TERMINFO_DIRS=/etc/terminfo:/lib/terminfo:/usr/share/terminfo",
+        "-e",
+        "TERM=xterm",
+        "-e",
+        "RED_ENV_DISABLE_ZSH_256COLOR=1",
+        "--entrypoint",
+        "bash",
+        image_tag,
+        "-lc",
+        "rm -f /root/.red_env/zim/init.zsh /root/.red_env/zim/login_init.zsh && exec bash",
+    ]
+
+
+def run_verifier(artifact: Path, arch: str, dockerfile: Path, interactive: bool = False) -> None:
     with tempfile.TemporaryDirectory(prefix="red-env-verify-") as temp_dir:
         staged = prepare_verifier_context(artifact, dockerfile, Path(temp_dir))
+        image_tag = verifier_image_tag(arch)
         subprocess.run(
             verifier_build_command(
                 arch=arch,
                 dockerfile=staged.dockerfile_path,
                 package_file=staged.artifact_name,
                 context_dir=staged.context_dir,
+                image_tag=image_tag,
             ),
             check=True,
         )
+        if interactive:
+            subprocess.run(
+                verifier_run_command(arch=arch, image_tag=image_tag),
+                check=False,
+            )

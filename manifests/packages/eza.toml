@@ -1,0 +1,19 @@
+id = "eza"
+description = "modern ls replacement"
+profiles = ["extended"]
+architectures = ["x86_64", "arm64"]
+
+[source]
+type = "github_release"
+repo = "eza-community/eza"
+
+[strategy]
+type = "archive_extract"
+
+[strategy.match]
+x86_64 = '(?i)^eza_x86_64-unknown-linux-musl\.tar\.gz$'
+arm64 = '(?i)^eza_aarch64-unknown-linux-gnu\.tar\.gz$'
+
+[strategy.extract]
+include = ["eza"]
+target_dir = "bin"

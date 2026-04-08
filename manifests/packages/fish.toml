@@ -1,0 +1,19 @@
+id = "fish"
+description = "friendly interactive shell"
+profiles = ["extended"]
+architectures = ["x86_64", "arm64"]
+
+[source]
+type = "github_release"
+repo = "fish-shell/fish-shell"
+
+[strategy]
+type = "archive_extract"
+
+[strategy.match]
+x86_64 = '(?i)^fish-.*-linux-x86_64\.tar\.xz$'
+arm64 = '(?i)^fish-.*-linux-aarch64\.tar\.xz$'
+
+[strategy.extract]
+include = ["fish"]
+target_dir = "bin"

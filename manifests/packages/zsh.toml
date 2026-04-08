@@ -8,12 +8,12 @@ type = "github_release"
 repo = "romkatv/zsh-bin"
 
 [strategy]
-type = "archive_extract"
+type = "archive_tree"
 
 [strategy.match]
 x86_64 = '(?i)^zsh-.*-linux-x86_64\.tar\.gz$'
 arm64 = '(?i)^zsh-.*-linux-aarch64\.tar\.gz$'
 
 [strategy.extract]
-include = ["zsh"]
-target_dir = "bin"
+target_dir = ""
+strip_components = 0

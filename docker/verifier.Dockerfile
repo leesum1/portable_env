@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     coreutils \
     python3 \
     tar \
+    vim \
     xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
@@ -27,6 +28,7 @@ RUN mkdir -p /verify/unpacked \
     && HOME=/root sh /verify/unpacked/red_env_offline/installer/install.sh \
     && test -d /root/.red_env/bin \
     && test -d /root/.red_env/configs \
+    && test -f /root/.red_env/cache/zim/zimfw.zsh \
     && python3 -c "import json, os, pathlib; \
 manifest = json.loads(pathlib.Path('/verify/unpacked/red_env_offline/bundle/bundle-manifest.json').read_text(encoding='utf-8')); \
 installed_files = manifest.get('installed_files', []); \
@@ -36,4 +38,5 @@ assert install_root.is_dir(), 'install root missing'; \
 missing = [relative for relative in installed_files if not (install_root / relative).exists()]; \
 assert not missing, f'missing installed files: {missing}'; \
 non_executable = [relative for relative in installed_files if (install_root / relative).is_file() and not os.access(install_root / relative, os.X_OK)]; \
-assert not non_executable, f'non-executable installed files: {non_executable}'"
+assert not non_executable, f'non-executable installed files: {non_executable}'" \
+    && if [ -x /root/.red_env/bin/zsh ]; then HOME=/root ZDOTDIR=/root/.red_env/configs/zsh /root/.red_env/bin/zsh -i -c 'test -f /root/.red_env/zim/zimfw.zsh && test -f /root/.red_env/zim/init.zsh'; fi

@@ -40,6 +40,7 @@ def build_parser() -> argparse.ArgumentParser:
     verify_parser.add_argument("--artifact", required=True)
     verify_parser.add_argument("--arch", required=True)
     verify_parser.add_argument("--dockerfile", default="docker/verifier.Dockerfile")
+    verify_parser.add_argument("--interactive", action="store_true")
     verify_parser.set_defaults(handler=verify_command)
 
     release_parser = subparsers.add_parser("release")

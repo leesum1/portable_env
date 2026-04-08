@@ -3,7 +3,30 @@ packages = ["fzf", "bat", "rg", "fd", "delta", "zsh"]
 
 [profiles.extended]
 extends = ["core"]
-packages = []
+packages = [
+  "eza",
+  "fish",
+  "navi",
+  "ouch",
+  "yazi",
+  "zellij",
+  "zimfw",
+  "zimfw-asciiship",
+  "zimfw-chrissicool-zsh-256color",
+  "zimfw-completion",
+  "zimfw-duration-info",
+  "zimfw-environment",
+  "zimfw-git",
+  "zimfw-git-info",
+  "zimfw-input",
+  "zimfw-pvenv",
+  "zimfw-utility",
+  "zimfw-zsh-autosuggestions",
+  "zimfw-zsh-completions",
+  "zimfw-zsh-history-substring-search",
+  "zimfw-zsh-syntax-highlighting",
+  "zimfw-zsh-z",
+]
 
 [profiles.experimental]
 extends = ["extended"]

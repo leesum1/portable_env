@@ -86,3 +86,24 @@ def test_validate_manifest_detects_cycles() -> None:
     with pytest.raises(ValueError) as excinfo:
         validate_manifest(manifest)
     assert "cyclic profile inheritance" in str(excinfo.value)
+
+
+def test_validate_manifest_accepts_github_archive_source_and_archive_tree_strategy() -> None:
+    manifest = _make_manifest(
+        profiles={"extended": ProfileSpec(name="extended", packages=["plugin"], extends=[])},
+        packages={
+            "plugin": PackageSpec(
+                id="plugin",
+                description="plugin",
+                profiles=["extended"],
+                architectures=["x86_64"],
+                source=SourceSpec(type="github_archive", repo="owner/plugin"),
+                strategy=StrategySpec(
+                    type="archive_tree",
+                    extract={"target_dir": "cache/zim/modules/plugin", "strip_components": 1},
+                ),
+            )
+        },
+    )
+
+    validate_manifest(manifest)

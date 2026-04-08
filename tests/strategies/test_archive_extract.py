@@ -1,5 +1,6 @@
 import io
 import tarfile
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -63,3 +64,31 @@ def test_apply_archive_extract_fails_if_include_missing(tmp_path: Path):
 
     with pytest.raises(ValueError, match="missing includes: picker"):
         apply_archive_extract(package, archive_path, bundle_root)
+
+
+def test_apply_archive_extract_supports_zip_assets(tmp_path: Path):
+    archive_path = tmp_path / "tool.zip"
+    bundle_root = tmp_path / "bundle"
+    bundle_root.mkdir()
+
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("yazi-x86_64-unknown-linux-musl/yazi", "#!/bin/sh\necho yazi\n")
+        archive.writestr("yazi-x86_64-unknown-linux-musl/ya", "#!/bin/sh\necho ya\n")
+
+    package = PackageSpec(
+        id="yazi",
+        description="yazi",
+        profiles=["extended"],
+        architectures=["x86_64"],
+        source=SourceSpec(type="github_release", repo="sxyazi/yazi"),
+        strategy=StrategySpec(
+            type="archive_extract",
+            extract={"include": ["ya", "yazi"], "target_dir": "bin"},
+        ),
+    )
+
+    outputs = apply_archive_extract(package, archive_path, bundle_root)
+
+    assert outputs == [bundle_root / "bin" / "yazi", bundle_root / "bin" / "ya"]
+    assert (bundle_root / "bin" / "yazi").exists()
+    assert (bundle_root / "bin" / "ya").exists()

@@ -1,6 +1,7 @@
 import io
 import json
 import tarfile
+import zipfile
 from pathlib import Path
 
 from red_env.cli.app import main
@@ -13,11 +14,17 @@ def test_build_command_stages_tools_configs_installer_and_metadata(tmp_path: Pat
     def fake_download(package, arch, destination):
         destination.parent.mkdir(parents=True, exist_ok=True)
         with tarfile.open(destination, "w:gz") as archive:
-            payload = f"#!/bin/sh\necho {package.id}-{arch}\n".encode("utf-8")
-            info = tarfile.TarInfo(package.id)
-            info.size = len(payload)
-            info.mode = 0o755
-            archive.addfile(info, io.BytesIO(payload))
+            files = {package.id: f"#!/bin/sh\necho {package.id}-{arch}\n".encode("utf-8")}
+            if package.id == "zsh":
+                files = {
+                    "bin/zsh": b"#!/bin/sh\necho zsh\n",
+                    "share/zsh/5.8/functions/_red_env": b"#compdef red_env\n",
+                }
+            for name, payload in files.items():
+                info = tarfile.TarInfo(name)
+                info.size = len(payload)
+                info.mode = 0o755 if name.endswith("zsh") else 0o644
+                archive.addfile(info, io.BytesIO(payload))
         return destination
 
     monkeypatch.setattr("red_env.cli.commands.build.download_package_asset", fake_download)
@@ -53,6 +60,7 @@ def test_build_command_stages_tools_configs_installer_and_metadata(tmp_path: Pat
         assert "red_env_offline/bundle/bin/delta" in members
         assert "red_env_offline/bundle/bin/zsh" in members
         assert "red_env_offline/configs/zsh/zshrc" in members
+        assert "red_env_offline/configs/zsh/.zshrc" in members
         assert "red_env_offline/installer/install.sh" in members
         assert "red_env_offline/bundle/bundle-manifest.json" in members
 
@@ -70,3 +78,93 @@ def test_build_command_stages_tools_configs_installer_and_metadata(tmp_path: Pat
             "bin/rg",
             "bin/zsh",
         ]
+
+
+def test_build_command_extended_profile_stages_offline_zimfw_runtime(tmp_path: Path, monkeypatch):
+    build_root = tmp_path / "build"
+    dist_root = tmp_path / "dist"
+
+    def fake_download(package, arch, destination):
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        strategy_type = package.strategy.type
+        if package.id == "zimfw":
+            destination.write_text("#!/bin/sh\n# zimfw\n", encoding="utf-8")
+            return destination
+        if strategy_type == "archive_tree":
+            with tarfile.open(destination, "w:gz") as archive:
+                files = {}
+                if package.id == "zsh":
+                    files = {
+                        "bin/zsh": b"#!/bin/sh\necho zsh\n",
+                        "share/zsh/5.8/functions/_red_env": b"#compdef red_env\n",
+                    }
+                else:
+                    module_name = package.strategy.extract["target_dir"].split("/")[-1]
+                    files = {f"{package.id}-master/{module_name}.plugin.zsh": b"# plugin\n"}
+                for name, payload in files.items():
+                    info = tarfile.TarInfo(name)
+                    info.size = len(payload)
+                    info.mode = 0o755 if name.endswith("zsh") else 0o644
+                    archive.addfile(info, io.BytesIO(payload))
+            return destination
+        if package.id == "fish":
+            with tarfile.open(destination, "w:xz") as archive:
+                payload = b"#!/bin/sh\necho fish\n"
+                info = tarfile.TarInfo("fish")
+                info.size = len(payload)
+                info.mode = 0o755
+                archive.addfile(info, io.BytesIO(payload))
+            return destination
+        if package.id == "yazi":
+            with zipfile.ZipFile(destination, "w") as archive:
+                archive.writestr("yazi-x86_64-unknown-linux-musl/ya", "#!/bin/sh\necho ya\n")
+                archive.writestr("yazi-x86_64-unknown-linux-musl/yazi", "#!/bin/sh\necho yazi\n")
+            return destination
+        with tarfile.open(destination, "w:gz") as archive:
+            payload = f"#!/bin/sh\necho {package.id}-{arch}\n".encode("utf-8")
+            info = tarfile.TarInfo(package.id)
+            info.size = len(payload)
+            info.mode = 0o755
+            archive.addfile(info, io.BytesIO(payload))
+        return destination
+
+    monkeypatch.setattr("red_env.cli.commands.build.download_package_asset", fake_download)
+
+    exit_code = main(
+        [
+            "build",
+            "--profile",
+            "extended",
+            "--arch",
+            "x86_64",
+            "--manifest-root",
+            "manifests",
+            "--build-root",
+            str(build_root),
+            "--dist-root",
+            str(dist_root),
+        ]
+    )
+
+    assert exit_code == 0
+
+    tarball_path = dist_root / "red_env_extended_x86_64.tar.gz"
+    with tarfile.open(tarball_path, "r:gz") as archive:
+        members = set(archive.getnames())
+        assert "red_env_offline/bundle/cache/zim/zimfw.zsh" in members
+        assert "red_env_offline/bundle/cache/zim/modules/environment/environment.plugin.zsh" in members
+        assert "red_env_offline/bundle/cache/zim/modules/zsh-completions/zsh-completions.plugin.zsh" in members
+        assert "red_env_offline/bundle/bin/zellij" in members
+        assert "red_env_offline/bundle/bin/yazi" in members
+        assert "red_env_offline/bundle/bin/ya" in members
+        assert "red_env_offline/bundle/bin/fish" in members
+        assert "red_env_offline/bundle/bin/eza" in members
+        assert "red_env_offline/bundle/share/zsh/5.8/functions/_red_env" in members
+        assert "red_env_offline/configs/zsh/.zshrc" in members
+
+        manifest_payload = json.loads(
+            archive.extractfile("red_env_offline/bundle/bundle-manifest.json").read().decode("utf-8")
+        )
+        assert "zimfw" in manifest_payload["packages"]
+        assert "zellij" in manifest_payload["packages"]
+        assert "bin/zellij" in manifest_payload["installed_files"]
