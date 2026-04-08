@@ -86,11 +86,11 @@ def verifier_run_command(*, arch: str, image_tag: str) -> list[str]:
         "-e",
         "RED_ENV_DISABLE_ZSH_256COLOR=1",
         "--entrypoint",
-        "zsh",
+        "bash",
         image_tag,
         "-l",
         "-c",
-        "stty erase '\\177' && exec zsh -l",
+        "exec bash -l",
     ]
 
 

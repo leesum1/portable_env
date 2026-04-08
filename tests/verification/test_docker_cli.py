@@ -110,11 +110,11 @@ def test_verifier_run_command_launches_interactive_shell_for_arch():
         "-e",
         "RED_ENV_DISABLE_ZSH_256COLOR=1",
         "--entrypoint",
-        "zsh",
+        "bash",
         "red-env-verify:test",
         "-l",
         "-c",
-        "stty erase '\\177' && exec zsh -l",
+        "exec bash -l",
     ]
 
 
@@ -159,11 +159,11 @@ def test_run_verifier_interactive_builds_then_runs_shell(tmp_path: Path, monkeyp
         "-e",
         "RED_ENV_DISABLE_ZSH_256COLOR=1",
         "--entrypoint",
-        "zsh",
+        "bash",
         captured[0][captured[0].index("-t") + 1],
         "-l",
         "-c",
-        "stty erase '\\177' && exec zsh -l",
+        "exec bash -l",
     ]
 
 
