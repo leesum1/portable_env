@@ -103,18 +103,9 @@ def test_verifier_run_command_launches_interactive_shell_for_arch():
         "PATH=/root/.red_env/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         "-e",
         "ZDOTDIR=/root/.red_env/configs/zsh",
-        "-e",
-        "TERMINFO_DIRS=/etc/terminfo:/lib/terminfo:/usr/share/terminfo",
-        "-e",
-        "TERM=xterm-256color",
-        "-e",
-        "RED_ENV_DISABLE_ZSH_256COLOR=1",
         "--entrypoint",
         "bash",
         "red-env-verify:test",
-        "-l",
-        "-c",
-        "exec bash -l",
     ]
 
 
@@ -152,18 +143,9 @@ def test_run_verifier_interactive_builds_then_runs_shell(tmp_path: Path, monkeyp
         "PATH=/root/.red_env/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         "-e",
         "ZDOTDIR=/root/.red_env/configs/zsh",
-        "-e",
-        "TERMINFO_DIRS=/etc/terminfo:/lib/terminfo:/usr/share/terminfo",
-        "-e",
-        "TERM=xterm-256color",
-        "-e",
-        "RED_ENV_DISABLE_ZSH_256COLOR=1",
         "--entrypoint",
         "bash",
         captured[0][captured[0].index("-t") + 1],
-        "-l",
-        "-c",
-        "exec bash -l",
     ]
 
 

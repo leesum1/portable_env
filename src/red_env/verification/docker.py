@@ -79,18 +79,9 @@ def verifier_run_command(*, arch: str, image_tag: str) -> list[str]:
         "PATH=/root/.red_env/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         "-e",
         "ZDOTDIR=/root/.red_env/configs/zsh",
-        "-e",
-        "TERMINFO_DIRS=/etc/terminfo:/lib/terminfo:/usr/share/terminfo",
-        "-e",
-        "TERM=xterm-256color",
-        "-e",
-        "RED_ENV_DISABLE_ZSH_256COLOR=1",
         "--entrypoint",
         "bash",
         image_tag,
-        "-l",
-        "-c",
-        "exec bash -l",
     ]
 
 
