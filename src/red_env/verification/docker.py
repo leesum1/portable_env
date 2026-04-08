@@ -90,7 +90,7 @@ def verifier_run_command(*, arch: str, image_tag: str) -> list[str]:
         image_tag,
         "-l",
         "-c",
-        "stty erase ^? && exec zsh -l",
+        "stty erase '\\177' && exec zsh -l",
     ]
 
 

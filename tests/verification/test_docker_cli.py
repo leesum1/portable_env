@@ -114,7 +114,7 @@ def test_verifier_run_command_launches_interactive_shell_for_arch():
         "red-env-verify:test",
         "-l",
         "-c",
-        "stty erase ^? && exec zsh -l",
+        "stty erase '\\177' && exec zsh -l",
     ]
 
 
@@ -163,7 +163,7 @@ def test_run_verifier_interactive_builds_then_runs_shell(tmp_path: Path, monkeyp
         captured[0][captured[0].index("-t") + 1],
         "-l",
         "-c",
-        "stty erase ^? && exec zsh -l",
+        "stty erase '\\177' && exec zsh -l",
     ]
 
 
