@@ -1,0 +1,19 @@
+id = "ruff"
+description = "extremely fast Python linter and formatter"
+profiles = ["extended"]
+architectures = ["x86_64", "arm64"]
+
+[source]
+type = "github_release"
+repo = "astral-sh/ruff"
+
+[strategy]
+type = "archive_extract"
+
+[strategy.match]
+x86_64 = '(?i)^ruff-x86_64-unknown-linux-musl\.tar\.gz$'
+arm64 = '(?i)^ruff-aarch64-unknown-linux-gnu\.tar\.gz$'
+
+[strategy.extract]
+include = ["ruff"]
+target_dir = "bin"

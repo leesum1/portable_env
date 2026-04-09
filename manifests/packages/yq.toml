@@ -1,0 +1,19 @@
+id = "yq"
+description = "lightweight and portable command-line YAML processor"
+profiles = ["extended"]
+architectures = ["x86_64", "arm64"]
+
+[source]
+type = "github_release"
+repo = "mikefarah/yq"
+
+[strategy]
+type = "direct_binary"
+
+[strategy.match]
+x86_64 = '(?i)^yq_linux_amd64$'
+arm64 = '(?i)^yq_linux_arm64$'
+
+[strategy.extract]
+target_dir = "bin"
+target_name = "yq"

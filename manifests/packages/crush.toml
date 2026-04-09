@@ -1,0 +1,19 @@
+id = "crush"
+description = "charmbracelet crush - terminal shell with AI capabilities"
+profiles = ["extended"]
+architectures = ["x86_64", "arm64"]
+
+[source]
+type = "github_release"
+repo = "charmbracelet/crush"
+
+[strategy]
+type = "archive_extract"
+
+[strategy.match]
+x86_64 = '(?i)^crush_.*_Linux_x86_64\.tar\.gz$'
+arm64 = '(?i)^crush_.*_Linux_arm64\.tar\.gz$'
+
+[strategy.extract]
+include = ["crush"]
+target_dir = "bin"

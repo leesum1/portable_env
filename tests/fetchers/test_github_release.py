@@ -1,4 +1,5 @@
 import io
+import shutil
 from urllib.error import HTTPError
 from pathlib import Path
 import tomllib
@@ -8,6 +9,52 @@ import pytest
 from red_env.fetchers.github_release import download_package_asset, select_asset_url
 from red_env.fetchers import github_release
 from red_env.manifest.models import PackageSpec, SourceSpec, StrategySpec
+
+
+def test_download_package_asset_local_file_copies_to_destination(tmp_path: Path):
+    manifest_root = tmp_path / "project"
+    manifest_root.mkdir()
+    assets_dir = manifest_root / "assets" / "tools"
+    assets_dir.mkdir(parents=True)
+    source_file = assets_dir / "tool-x86_64.tar.gz"
+    source_file.write_text("fake archive content", encoding="utf-8")
+
+    downloads_dir = manifest_root / "downloads"
+    downloads_dir.mkdir()
+    destination = downloads_dir / "tool-x86_64.tar.gz"
+
+    package = PackageSpec(
+        id="tool",
+        description="tool",
+        profiles=["core"],
+        architectures=["x86_64"],
+        source=SourceSpec(type="local_file", repo="local/tools", file_path="assets/tools/tool-${ARCH}.tar.gz"),
+        strategy=StrategySpec(type="archive_tree", extract={"target_dir": "bin", "strip_components": 0}),
+    )
+
+    result = download_package_asset(package, "x86_64", destination, manifest_root)
+
+    assert result == destination
+    assert destination.read_text(encoding="utf-8") == "fake archive content"
+
+
+def test_download_package_asset_local_file_raises_when_missing(tmp_path: Path):
+    manifest_root = tmp_path / "project"
+    manifest_root.mkdir()
+
+    package = PackageSpec(
+        id="tool",
+        description="tool",
+        profiles=["core"],
+        architectures=["x86_64"],
+        source=SourceSpec(type="local_file", repo="local/tools", file_path="assets/tools/missing-${ARCH}.tar.gz"),
+        strategy=StrategySpec(type="archive_tree"),
+    )
+
+    destination = manifest_root / "downloads" / "tool-x86_64.tar.gz"
+
+    with pytest.raises(FileNotFoundError, match="local file not found"):
+        download_package_asset(package, "x86_64", destination, manifest_root)
 
 
 def test_select_asset_url_matches_arch_regex():
@@ -52,36 +99,13 @@ def test_download_package_asset_raises_for_unknown_arch(tmp_path: Path):
         download_package_asset(package, "arm64", destination)
 
 
-def test_zsh_manifest_regex_selects_linux_assets_not_windows_variants():
+def test_zsh_manifest_uses_local_file_source():
     manifest_path = Path("manifests/packages/zsh.toml")
     manifest = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
 
-    release_payload = {
-        "assets": [
-            {
-                "name": "zsh-x86_64.tar.gz",
-                "browser_download_url": "https://example.invalid/zsh-cygwin-x86_64.tar.gz",
-            },
-            {
-                "name": "zsh-aarch64.tar.gz",
-                "browser_download_url": "https://example.invalid/zsh-cygwin-aarch64.tar.gz",
-            },
-            {
-                "name": "zsh-5.8-linux-x86_64.tar.gz",
-                "browser_download_url": "https://example.invalid/zsh-linux-x86_64.tar.gz",
-            },
-            {
-                "name": "zsh-5.8-linux-aarch64.tar.gz",
-                "browser_download_url": "https://example.invalid/zsh-linux-aarch64.tar.gz",
-            },
-        ]
-    }
-
-    x86_regex = manifest["strategy"]["match"]["x86_64"]
-    arm_regex = manifest["strategy"]["match"]["arm64"]
-
-    assert select_asset_url(release_payload, x86_regex) == "https://example.invalid/zsh-linux-x86_64.tar.gz"
-    assert select_asset_url(release_payload, arm_regex) == "https://example.invalid/zsh-linux-aarch64.tar.gz"
+    assert manifest["source"]["type"] == "local_file"
+    assert "file_path" in manifest["source"]
+    assert "${ARCH}" in manifest["source"]["file_path"]
 
 
 def test_fetch_json_adds_bearer_header_from_gh_token(monkeypatch):
@@ -155,3 +179,39 @@ def test_fetch_json_raises_clear_error_on_rate_limit(monkeypatch):
     assert "https://api.github.com/repos/owner/repo/releases/latest" in message
     assert "remaining=0" in message
     assert "auth_token=yes" in message
+
+
+def test_download_github_archive_falls_back_from_branch_to_tag(monkeypatch, tmp_path: Path):
+    destination = tmp_path / "archive.tar.gz"
+    attempts: list[str] = []
+
+    def fake_download(url: str, path: Path):
+        attempts.append(url)
+        if "/refs/heads/" in url:
+            raise HTTPError(url=url, code=404, msg="not found", hdrs=None, fp=None)
+        path.write_bytes(b"ok")
+
+    monkeypatch.setattr("red_env.fetchers.github_release._download_to_path", fake_download)
+
+    github_release._download_github_archive("zsh-users/zsh-completions", "0.36.0", destination)
+
+    assert attempts == [
+        "https://github.com/zsh-users/zsh-completions/archive/refs/heads/0.36.0.tar.gz",
+        "https://github.com/zsh-users/zsh-completions/archive/refs/tags/0.36.0.tar.gz",
+    ]
+    assert destination.read_bytes() == b"ok"
+
+
+def test_download_github_archive_uses_explicit_ref_without_fallback(monkeypatch, tmp_path: Path):
+    destination = tmp_path / "archive.tar.gz"
+    attempts: list[str] = []
+
+    def fake_download(url: str, path: Path):
+        attempts.append(url)
+        path.write_bytes(b"ok")
+
+    monkeypatch.setattr("red_env.fetchers.github_release._download_to_path", fake_download)
+
+    github_release._download_github_archive("owner/repo", "refs/tags/v1.0.0", destination)
+
+    assert attempts == ["https://github.com/owner/repo/archive/refs/tags/v1.0.0.tar.gz"]

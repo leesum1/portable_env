@@ -1,0 +1,16 @@
+id = "font-jetbrains-maple-mono"
+description = "JetBrains Maple Mono Regular font for terminal"
+profiles = ["extended"]
+architectures = ["x86_64", "arm64"]
+
+[source]
+type = "local_file"
+repo = "local/font"
+file_path = "../assets/fonts/JetBrainsMapleMono-Regular.ttf"
+
+[strategy]
+type = "direct_binary"
+
+[strategy.extract]
+target_dir = "fonts"
+target_name = "JetBrainsMapleMono-Regular.ttf"

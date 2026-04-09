@@ -1,0 +1,16 @@
+id = "oh-my-zsh-zsh-autosuggestions"
+description = "zsh autosuggestions plugin for oh-my-zsh"
+profiles = ["extended"]
+architectures = ["x86_64", "arm64"]
+
+[source]
+type = "github_archive"
+repo = "zsh-users/zsh-autosuggestions"
+ref = "v0.7.1"
+
+[strategy]
+type = "archive_tree"
+
+[strategy.extract]
+target_dir = "cache/oh-my-zsh/custom/plugins/zsh-autosuggestions"
+strip_components = 1

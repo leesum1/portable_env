@@ -1,0 +1,19 @@
+id = "dust"
+description = "du + rust = dust - intuitive disk usage analyzer"
+profiles = ["extended"]
+architectures = ["x86_64", "arm64"]
+
+[source]
+type = "github_release"
+repo = "bootandy/dust"
+
+[strategy]
+type = "archive_extract"
+
+[strategy.match]
+x86_64 = '(?i)^dust-.*-x86_64-unknown-linux-musl\.tar\.gz$'
+arm64 = '(?i)^dust-.*-aarch64-unknown-linux-musl\.tar\.gz$'
+
+[strategy.extract]
+include = ["dust"]
+target_dir = "bin"

@@ -1,31 +1,35 @@
 [profiles.core]
-packages = ["fzf", "bat", "rg", "fd", "delta", "zsh"]
+packages = ["fzf", "bat", "rg", "fd", "delta", "zsh", "zsh-bin-install-script"]
 
 [profiles.extended]
 extends = ["core"]
 packages = [
+  "aichat",
+  "crush",
+  "dust",
+  "duf",
   "eza",
+  "fastfetch",
   "fish",
+  "font-jetbrains-maple-mono",
+  "forceterm",
+  "glow",
+  "jq",
+  "lazygit",
   "navi",
+  "opencode",
   "ouch",
+  "ruff",
+  "upx",
+  "uv",
   "yazi",
+  "yq",
   "zellij",
-  "zimfw",
-  "zimfw-asciiship",
-  "zimfw-chrissicool-zsh-256color",
-  "zimfw-completion",
-  "zimfw-duration-info",
-  "zimfw-environment",
-  "zimfw-git",
-  "zimfw-git-info",
-  "zimfw-input",
-  "zimfw-pvenv",
-  "zimfw-utility",
-  "zimfw-zsh-autosuggestions",
-  "zimfw-zsh-completions",
-  "zimfw-zsh-history-substring-search",
-  "zimfw-zsh-syntax-highlighting",
-  "zimfw-zsh-z",
+  "zoxide",
+  "oh-my-zsh",
+  "oh-my-zsh-z",
+  "oh-my-zsh-zsh-autosuggestions",
+  "oh-my-zsh-zsh-syntax-highlighting",
 ]
 
 [profiles.experimental]

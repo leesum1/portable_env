@@ -18,42 +18,57 @@ if [[ -d "${RED_ENV_HOME}/share/zsh" ]]; then
 fi
 
 # -----------------------------------------------------------------------------
-# Zimfw 初始化
+# Oh My Zsh 初始化
 # -----------------------------------------------------------------------------
-ZIM_HOME="${RED_ENV_HOME}/zim"
-ZIM_CONFIG_FILE="${RED_ENV_HOME}/configs/zsh/zimrc"
+export ZSH="${RED_ENV_HOME}/cache/oh-my-zsh"
+export ZSH_CACHE_DIR="${RED_ENV_HOME}/cache/oh-my-zsh/cache"
 
-# 如果 zimfw 未安装，则初始化
-if [[ ! -e ${ZIM_HOME}/zimfw.zsh ]]; then
-  # 离线模式：从缓存复制
-  if [[ -d "${RED_ENV_HOME}/cache/zim" ]]; then
-    cp -r "${RED_ENV_HOME}/cache/zim" "${ZIM_HOME}"
+# 离线环境下，从缓存初始化 oh-my-zsh
+if [[ ! -d "${ZSH}" ]]; then
+  if [[ -d "${RED_ENV_HOME}/bundle/cache/oh-my-zsh" ]]; then
+    mkdir -p "${RED_ENV_HOME}/cache"
+    cp -r "${RED_ENV_HOME}/bundle/cache/oh-my-zsh" "${ZSH}"
   fi
 fi
 
-# 初始化 zimfw 模块
-if [[ -f ${ZIM_HOME}/zimfw.zsh && ! -s ${ZIM_HOME}/init.zsh ]]; then
-  (
-    export ZIM_HOME
-    export ZIM_CONFIG_FILE
-    source ${ZIM_HOME}/zimfw.zsh build
-  )
-fi
+# 设置插件列表
+plugins=(
+  # 内置插件
+  git
+  extract
 
-if [[ -s ${ZIM_HOME}/init.zsh ]]; then
-  source ${ZIM_HOME}/init.zsh
-fi
+  # 自定义插件 (离线缓存)
+  z
+  zsh-autosuggestions
+  zsh-syntax-highlighting
+)
 
-# zimfw 命令函数
-zimfw() {
-  source "${ZIM_HOME}/zimfw.zsh" "$@"
-}
+# 设置主题
+# 常用内置主题: robbyrussell, avit, jonathan, nanotech, galaxy
+# agnoster 需要 powerline 字体支持，可能在某些终端显示异常
+ZSH_THEME="robbyrussell"
+
+# 加载 oh-my-zsh
+if [[ -f "${ZSH}/oh-my-zsh.sh" ]]; then
+  # 设置自定义插件目录
+  ZSH_CUSTOM="${ZSH}/custom"
+  # 在验证模式下跳过交互式插件初始化
+  if [[ -n "${RED_ENV_VERIFY_INTERACTIVE:-}" ]]; then
+    export DISABLE_AUTO_UPDATE="true"
+  fi
+  source "${ZSH}/oh-my-zsh.sh"
+fi
 
 # -----------------------------------------------------------------------------
 # 环境变量
 # -----------------------------------------------------------------------------
-export LANG=en_US.UTF-8
-export LC_ALL=en_US.UTF-8
+if command -v locale &> /dev/null && locale -a 2>/dev/null | grep -qi '^en_US\.utf-?8$'; then
+  export LANG=en_US.UTF-8
+  export LC_ALL=en_US.UTF-8
+else
+  export LANG=C.UTF-8
+  export LC_ALL=C.UTF-8
+fi
 export EDITOR='vim'
 export VISUAL='vim'
 export PAGER='less'
@@ -108,12 +123,6 @@ zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}' # 大小写不敏感
 # 键绑定
 # -----------------------------------------------------------------------------
 bindkey -e                       # Emacs 键绑定
-
-# 历史搜索
-bindkey '^[[A' history-substring-search-up
-bindkey '^[[B' history-substring-search-down
-bindkey '^P' history-substring-search-up
-bindkey '^N' history-substring-search-down
 
 # -----------------------------------------------------------------------------
 # 别名

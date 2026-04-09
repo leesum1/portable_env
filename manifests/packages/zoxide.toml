@@ -1,0 +1,19 @@
+id = "zoxide"
+description = "smarter cd command with learned history"
+profiles = ["extended"]
+architectures = ["x86_64", "arm64"]
+
+[source]
+type = "github_release"
+repo = "ajeetdsouza/zoxide"
+
+[strategy]
+type = "archive_extract"
+
+[strategy.match]
+x86_64 = '(?i)^zoxide-.*-x86_64-unknown-linux-musl\.tar\.gz$'
+arm64 = '(?i)^zoxide-.*-aarch64-unknown-linux-musl\.tar\.gz$'
+
+[strategy.extract]
+include = ["zoxide"]
+target_dir = "bin"

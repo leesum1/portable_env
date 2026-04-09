@@ -1,0 +1,16 @@
+id = "forceterm"
+description = "ForceTerm terminal application (AppImage)"
+profiles = ["extended"]
+architectures = ["x86_64", "arm64"]
+
+[source]
+type = "local_file"
+repo = "local/forceterm"
+file_path = "../assets/forceterm/forceterm-${ARCH}.AppImage"
+
+[strategy]
+type = "direct_binary"
+
+[strategy.extract]
+target_dir = "forceterm"
+target_name = "forceterm.AppImage"

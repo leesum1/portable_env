@@ -1,0 +1,19 @@
+id = "fastfetch"
+description = "fast neofetch-like system information tool"
+profiles = ["extended"]
+architectures = ["x86_64", "arm64"]
+
+[source]
+type = "github_release"
+repo = "fastfetch-cli/fastfetch"
+
+[strategy]
+type = "archive_extract"
+
+[strategy.match]
+x86_64 = '(?i)^fastfetch-linux-amd64\.zip$'
+arm64 = '(?i)^fastfetch-linux-aarch64\.zip$'
+
+[strategy.extract]
+include = ["fastfetch"]
+target_dir = "bin"

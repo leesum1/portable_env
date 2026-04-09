@@ -1,0 +1,19 @@
+id = "opencode"
+description = "AI coding agent - terminal-based AI coding environment"
+profiles = ["extended"]
+architectures = ["x86_64", "arm64"]
+
+[source]
+type = "github_release"
+repo = "anomalyco/opencode"
+
+[strategy]
+type = "archive_extract"
+
+[strategy.match]
+x86_64 = '(?i)^opencode-linux-x64\.tar\.gz$'
+arm64 = '(?i)^opencode-linux-arm64\.tar\.gz$'
+
+[strategy.extract]
+include = ["opencode"]
+target_dir = "bin"

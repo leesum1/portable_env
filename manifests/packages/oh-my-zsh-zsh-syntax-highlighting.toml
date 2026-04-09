@@ -1,0 +1,16 @@
+id = "oh-my-zsh-zsh-syntax-highlighting"
+description = "zsh syntax highlighting plugin for oh-my-zsh"
+profiles = ["extended"]
+architectures = ["x86_64", "arm64"]
+
+[source]
+type = "github_archive"
+repo = "zsh-users/zsh-syntax-highlighting"
+ref = "0.8.0"
+
+[strategy]
+type = "archive_tree"
+
+[strategy.extract]
+target_dir = "cache/oh-my-zsh/custom/plugins/zsh-syntax-highlighting"
+strip_components = 1

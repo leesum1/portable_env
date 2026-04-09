@@ -1,0 +1,16 @@
+id = "zsh-bin-install-script"
+description = "romkatv/zsh-bin install script for offline zsh installation"
+profiles = ["core"]
+architectures = ["x86_64", "arm64"]
+
+[source]
+type = "local_file"
+repo = "romkatv/zsh-bin"
+file_path = "../assets/zsh-bin/install"
+
+[strategy]
+type = "direct_binary"
+
+[strategy.extract]
+target_dir = "zsh-bin"
+target_name = "install"

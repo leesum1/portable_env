@@ -1,19 +1,16 @@
 id = "zsh"
-description = "prebuilt zsh"
+description = "prebuilt zsh from romkatv/zsh-bin (offline install)"
 profiles = ["core"]
 architectures = ["x86_64", "arm64"]
 
 [source]
-type = "github_release"
+type = "local_file"
 repo = "romkatv/zsh-bin"
+file_path = "../assets/zsh-bin/zsh-5.8-linux-${ARCH}.tar.gz"
 
 [strategy]
-type = "archive_tree"
-
-[strategy.match]
-x86_64 = '(?i)^zsh-.*-linux-x86_64\.tar\.gz$'
-arm64 = '(?i)^zsh-.*-linux-aarch64\.tar\.gz$'
+type = "direct_binary"
 
 [strategy.extract]
-target_dir = ""
-strip_components = 0
+target_dir = "zsh-bin"
+target_name = "zsh-5.8-linux.tar.gz"

@@ -8,6 +8,7 @@ class SourceSpec:
     type: str
     repo: str
     ref: str | None = None
+    file_path: str | None = None
 
 
 @dataclass(frozen=True)

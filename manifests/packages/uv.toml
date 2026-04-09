@@ -1,0 +1,19 @@
+id = "uv"
+description = "extremely fast Python package installer and resolver"
+profiles = ["extended"]
+architectures = ["x86_64", "arm64"]
+
+[source]
+type = "github_release"
+repo = "astral-sh/uv"
+
+[strategy]
+type = "archive_extract"
+
+[strategy.match]
+x86_64 = '(?i)^uv-x86_64-unknown-linux-musl\.tar\.gz$'
+arm64 = '(?i)^uv-aarch64-unknown-linux-gnu\.tar\.gz$'
+
+[strategy.extract]
+include = ["uv", "uvx"]
+target_dir = "bin"

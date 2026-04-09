@@ -1,0 +1,19 @@
+id = "upx"
+description = "UPX - Ultimate Packer for eXecutables"
+profiles = ["extended"]
+architectures = ["x86_64", "arm64"]
+
+[source]
+type = "github_release"
+repo = "upx/upx"
+
+[strategy]
+type = "archive_extract"
+
+[strategy.match]
+x86_64 = '(?i)^upx-.*-amd64_linux\.tar\.xz$'
+arm64 = '(?i)^upx-.*-arm64_linux\.tar\.xz$'
+
+[strategy.extract]
+include = ["upx"]
+target_dir = "bin"

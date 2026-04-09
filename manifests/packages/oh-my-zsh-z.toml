@@ -1,0 +1,16 @@
+id = "oh-my-zsh-z"
+description = "z directory jumping plugin for oh-my-zsh"
+profiles = ["extended"]
+architectures = ["x86_64", "arm64"]
+
+[source]
+type = "github_archive"
+repo = "agkozak/zsh-z"
+ref = "master"
+
+[strategy]
+type = "archive_tree"
+
+[strategy.extract]
+target_dir = "cache/oh-my-zsh/custom/plugins/z"
+strip_components = 1

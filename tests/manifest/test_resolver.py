@@ -100,7 +100,28 @@ def test_validate_manifest_accepts_github_archive_source_and_archive_tree_strate
                 source=SourceSpec(type="github_archive", repo="owner/plugin"),
                 strategy=StrategySpec(
                     type="archive_tree",
-                    extract={"target_dir": "cache/zim/modules/plugin", "strip_components": 1},
+                    extract={"target_dir": "cache/oh-my-zsh/custom/plugins/plugin", "strip_components": 1},
+                ),
+            )
+        },
+    )
+
+    validate_manifest(manifest)
+
+
+def test_validate_manifest_accepts_local_file_source() -> None:
+    manifest = _make_manifest(
+        profiles={"core": ProfileSpec(name="core", packages=["tool"], extends=[])},
+        packages={
+            "tool": PackageSpec(
+                id="tool",
+                description="local tool",
+                profiles=["core"],
+                architectures=["x86_64"],
+                source=SourceSpec(type="local_file", repo="local/tools", file_path="assets/tools/tool.tar.gz"),
+                strategy=StrategySpec(
+                    type="archive_tree",
+                    extract={"target_dir": "bin", "strip_components": 0},
                 ),
             )
         },

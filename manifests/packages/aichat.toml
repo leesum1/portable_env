@@ -1,0 +1,19 @@
+id = "aichat"
+description = "AI chat client for the terminal"
+profiles = ["extended"]
+architectures = ["x86_64", "arm64"]
+
+[source]
+type = "github_release"
+repo = "sigoden/aichat"
+
+[strategy]
+type = "archive_extract"
+
+[strategy.match]
+x86_64 = '(?i)^aichat-.*-x86_64-unknown-linux-musl\.tar\.gz$'
+arm64 = '(?i)^aichat-.*-aarch64-unknown-linux-musl\.tar\.gz$'
+
+[strategy.extract]
+include = ["aichat"]
+target_dir = "bin"

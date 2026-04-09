@@ -18,8 +18,10 @@ def _download_destination(package_id: str, strategy_type: str, downloads_dir: Pa
 
 
 def _download_suffix(args_arch: str, package) -> str:
-    if package.source.type == "github_archive":
+    if package.source.type in {"github_archive", "local_file"}:
         return ".tar.gz"
+    if package.strategy.type == "direct_binary":
+        return ".bin"
     match = package.strategy.match.get(args_arch, "")
     lowered = match.lower()
     if ".zip" in lowered:
@@ -75,7 +77,7 @@ def build_command(args) -> int:
             raise ValueError(f"package {package.id} does not support architecture {args.arch}")
 
         destination = downloads_dir / f"{package.id}-{args.arch}{_download_suffix(args.arch, package)}"
-        downloaded_asset = download_package_asset(package, args.arch, destination)
+        downloaded_asset = download_package_asset(package, args.arch, destination, manifest_root.resolve())
         strategy_handler = STRATEGY_REGISTRY[package.strategy.type]
         strategy_handler(package, downloaded_asset, bundle_root)
 

@@ -1,0 +1,19 @@
+id = "duf"
+description = "disk usage/free utility - better df alternative"
+profiles = ["extended"]
+architectures = ["x86_64", "arm64"]
+
+[source]
+type = "github_release"
+repo = "muesli/duf"
+
+[strategy]
+type = "archive_extract"
+
+[strategy.match]
+x86_64 = '(?i)^duf_.*_linux_x86_64\.tar\.gz$'
+arm64 = '(?i)^duf_.*_linux_arm64\.tar\.gz$'
+
+[strategy.extract]
+include = ["duf"]
+target_dir = "bin"

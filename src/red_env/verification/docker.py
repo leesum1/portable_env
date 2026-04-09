@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import platform
 import shutil
 import subprocess
 import tempfile
@@ -10,6 +11,15 @@ from pathlib import Path
 
 def _platform_for_arch(arch: str) -> str:
     return {"x86_64": "linux/amd64", "arm64": "linux/arm64"}[arch]
+
+
+def _get_host_arch() -> str:
+    machine = platform.machine().lower()
+    if machine in ("x86_64", "amd64"):
+        return "x86_64"
+    if machine in ("aarch64", "arm64"):
+        return "arm64"
+    return machine
 
 
 @dataclass(frozen=True)
@@ -73,17 +83,30 @@ def verifier_run_command(*, arch: str, image_tag: str) -> list[str]:
         "run",
         "--rm",
         "-it",
+        "--init",
+        "--security-opt",
+        "seccomp=unconfined",
         "--platform",
         _platform_for_arch(arch),
         "-e",
         "PATH=/root/.red_env/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         "-e",
+        "LANG=en_US.UTF-8",
+        "-e",
+        "LC_ALL=en_US.UTF-8",
+        "-e",
+        "TERM=xterm-256color",
+        "-e",
+        "RED_ENV_DISABLE_ZSH_256COLOR=1",
+        "-e",
+        "RED_ENV_VERIFY_INTERACTIVE=1",
+        "-e",
         "ZDOTDIR=/root/.red_env/configs/zsh",
         "--entrypoint",
-        "bash",
+        "sh",
         image_tag,
-        "-ic",
-        "stty erase ^? 2>/dev/null; exec bash -i",
+        "-c",
+        "stty erase '^?' kill '^U' intr '^C' eof '^D' sane; if [ -x /root/.red_env/bin/zsh ]; then exec /root/.red_env/bin/zsh -l -i; else exec bash -i; fi",
     ]
 
 
@@ -91,16 +114,27 @@ def run_verifier(artifact: Path, arch: str, dockerfile: Path, interactive: bool 
     with tempfile.TemporaryDirectory(prefix="red-env-verify-") as temp_dir:
         staged = prepare_verifier_context(artifact, dockerfile, Path(temp_dir))
         image_tag = verifier_image_tag(arch)
-        subprocess.run(
-            verifier_build_command(
-                arch=arch,
-                dockerfile=staged.dockerfile_path,
-                package_file=staged.artifact_name,
-                context_dir=staged.context_dir,
-                image_tag=image_tag,
-            ),
-            check=True,
-        )
+        try:
+            subprocess.run(
+                verifier_build_command(
+                    arch=arch,
+                    dockerfile=staged.dockerfile_path,
+                    package_file=staged.artifact_name,
+                    context_dir=staged.context_dir,
+                    image_tag=image_tag,
+                ),
+                check=True,
+                capture_output=True,
+            )
+        except subprocess.CalledProcessError as e:
+            # Check if it's a cross-architecture emulation issue
+            host_arch = _get_host_arch()
+            if host_arch != arch and "exec format error" in (e.stderr or b"").decode("utf-8", errors="ignore").lower():
+                raise RuntimeError(
+                    f"Cannot run {arch} container on {host_arch} host without QEMU emulation.\n"
+                    f"Run: docker run --rm --privileged multiarch/qemu-user-static --reset -p yes"
+                ) from e
+            raise
         if interactive:
             subprocess.run(
                 verifier_run_command(arch=arch, image_tag=image_tag),

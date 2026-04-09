@@ -1,0 +1,19 @@
+id = "jq"
+description = "lightweight and flexible command-line JSON processor"
+profiles = ["extended"]
+architectures = ["x86_64", "arm64"]
+
+[source]
+type = "github_release"
+repo = "jqlang/jq"
+
+[strategy]
+type = "direct_binary"
+
+[strategy.match]
+x86_64 = '(?i)^jq-linux-amd64$'
+arm64 = '(?i)^jq-linux-arm64$'
+
+[strategy.extract]
+target_dir = "bin"
+target_name = "jq"
