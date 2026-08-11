@@ -158,15 +158,6 @@ def test_build_command_extended_profile_stages_offline_oh_my_zsh_runtime(tmp_pat
                     info.mode = 0o755
                     archive.addfile(info, io.BytesIO(payload))
             return destination
-        if package.id == "aichat":
-            # aichat uses github_release + archive_extract
-            with tarfile.open(destination, "w:gz") as archive:
-                payload = b"#!/bin/sh\necho aichat\n"
-                info = tarfile.TarInfo("aichat")
-                info.size = len(payload)
-                info.mode = 0o755
-                archive.addfile(info, io.BytesIO(payload))
-            return destination
         if package.id == "jq":
             # jq uses github_release + direct_binary
             destination.write_text("#!/bin/sh\necho jq\n", encoding="utf-8")
@@ -188,24 +179,6 @@ def test_build_command_extended_profile_stages_offline_oh_my_zsh_runtime(tmp_pat
             with tarfile.open(destination, "w:xz") as archive:
                 payload = b"#!/bin/sh\necho upx\n"
                 info = tarfile.TarInfo("upx")
-                info.size = len(payload)
-                info.mode = 0o755
-                archive.addfile(info, io.BytesIO(payload))
-            return destination
-        if package.id == "crush":
-            # crush uses github_release + archive_extract
-            with tarfile.open(destination, "w:gz") as archive:
-                payload = b"#!/bin/sh\necho crush\n"
-                info = tarfile.TarInfo("crush")
-                info.size = len(payload)
-                info.mode = 0o755
-                archive.addfile(info, io.BytesIO(payload))
-            return destination
-        if package.id == "opencode":
-            # opencode uses archive_tree with single binary
-            with tarfile.open(destination, "w:gz") as archive:
-                payload = b"#!/bin/sh\necho opencode\n"
-                info = tarfile.TarInfo("opencode")
                 info.size = len(payload)
                 info.mode = 0o755
                 archive.addfile(info, io.BytesIO(payload))

@@ -16,9 +16,7 @@ def test_repo_manifests_define_extended_profile_with_modern_tooling():
     validate_manifest(manifest)
 
     assert resolve_profile(manifest, "extended") == [
-        "aichat",
         "bat",
-        "crush",
         "delta",
         "duf",
         "dust",
@@ -37,7 +35,6 @@ def test_repo_manifests_define_extended_profile_with_modern_tooling():
         "oh-my-zsh-z",
         "oh-my-zsh-zsh-autosuggestions",
         "oh-my-zsh-zsh-syntax-highlighting",
-        "opencode",
         "ouch",
         "rg",
         "ruff",

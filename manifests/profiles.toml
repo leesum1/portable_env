@@ -4,8 +4,6 @@ packages = ["fzf", "bat", "rg", "fd", "delta", "zsh", "zsh-bin-install-script"]
 [profiles.extended]
 extends = ["core"]
 packages = [
-  "aichat",
-  "crush",
   "dust",
   "duf",
   "eza",
@@ -17,7 +15,6 @@ packages = [
   "jq",
   "lazygit",
   "navi",
-  "opencode",
   "ouch",
   "ruff",
   "upx",
