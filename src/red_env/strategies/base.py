@@ -7,5 +7,5 @@ from red_env.manifest.models import PackageSpec
 
 
 class StrategyHandler(Protocol):
-    def __call__(self, package: PackageSpec, downloaded_asset: Path, bundle_root: Path) -> list[Path]:
+    def __call__(self, package: PackageSpec, downloaded_asset: Path, bundle_root: Path, arch: str) -> list[Path]:
         ...

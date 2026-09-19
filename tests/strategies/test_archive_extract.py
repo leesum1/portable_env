@@ -33,7 +33,7 @@ def test_apply_archive_extract_copies_named_binary(tmp_path: Path):
         ),
     )
 
-    outputs = apply_archive_extract(package, archive_path, bundle_root)
+    outputs = apply_archive_extract(package, archive_path, bundle_root, "x86_64")
     assert outputs == [bundle_root / "bin" / "fzf"]
     assert (bundle_root / "bin" / "fzf").exists()
 
@@ -63,7 +63,7 @@ def test_apply_archive_extract_fails_if_include_missing(tmp_path: Path):
     )
 
     with pytest.raises(ValueError, match="missing includes: picker"):
-        apply_archive_extract(package, archive_path, bundle_root)
+        apply_archive_extract(package, archive_path, bundle_root, "x86_64")
 
 
 def test_apply_archive_extract_supports_zip_assets(tmp_path: Path):
@@ -87,7 +87,7 @@ def test_apply_archive_extract_supports_zip_assets(tmp_path: Path):
         ),
     )
 
-    outputs = apply_archive_extract(package, archive_path, bundle_root)
+    outputs = apply_archive_extract(package, archive_path, bundle_root, "x86_64")
 
     assert outputs == [bundle_root / "bin" / "yazi", bundle_root / "bin" / "ya"]
     assert (bundle_root / "bin" / "yazi").exists()

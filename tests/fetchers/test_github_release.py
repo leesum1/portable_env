@@ -181,6 +181,29 @@ def test_fetch_json_raises_clear_error_on_rate_limit(monkeypatch):
     assert "auth_token=yes" in message
 
 
+def test_fetch_json_rate_limit_hint_when_no_token(monkeypatch):
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+
+    def fake_urlopen(request, timeout):
+        raise HTTPError(
+            url=request.full_url,
+            code=403,
+            msg="rate limit exceeded",
+            hdrs={"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "9999999999"},
+            fp=None,
+        )
+
+    monkeypatch.setattr("red_env.fetchers.github_release.urllib.request.urlopen", fake_urlopen)
+
+    with pytest.raises(RuntimeError) as excinfo:
+        github_release._fetch_json("https://api.github.com/repos/owner/repo/releases/latest")
+
+    message = str(excinfo.value)
+    assert "GH_TOKEN" in message
+    assert "gh auth token" in message
+
+
 def test_download_github_archive_falls_back_from_branch_to_tag(monkeypatch, tmp_path: Path):
     destination = tmp_path / "archive.tar.gz"
     attempts: list[str] = []

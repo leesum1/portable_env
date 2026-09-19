@@ -26,9 +26,9 @@ def validate_manifest(manifest: ManifestSpec) -> None:
                 raise ValueError(
                     f"package {package.id} declares profile {profile_name} but profile does not list it"
                 )
-        if package.source.type not in {"github_release", "github_archive", "local_file"}:
+        if package.source.type not in {"github_release", "github_release_source", "github_archive", "local_file"}:
             raise ValueError(f"unsupported source type: {package.source.type}")
-        if package.strategy.type not in {"direct_binary", "archive_extract", "archive_tree", "directory_copy"}:
+        if package.strategy.type not in {"direct_binary", "archive_extract", "archive_tree", "directory_copy", "zig_build", "go_build"}:
             raise ValueError(f"unsupported strategy type: {package.strategy.type}")
 
     _ensure_no_profile_cycles(manifest)

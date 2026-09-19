@@ -4,15 +4,11 @@ profiles = ["extended"]
 architectures = ["x86_64", "arm64"]
 
 [source]
-type = "github_release"
+type = "github_release_source"
 repo = "sxyazi/yazi"
 
 [strategy]
-type = "archive_extract"
-
-[strategy.match]
-x86_64 = '(?i)^yazi-x86_64-unknown-linux-musl\.zip$'
-arm64 = '(?i)^yazi-aarch64-unknown-linux-musl\.zip$'
+type = "zig_build"
 
 [strategy.extract]
 include = ["ya", "yazi"]

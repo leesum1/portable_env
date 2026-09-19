@@ -34,7 +34,7 @@ def test_apply_archive_tree_extracts_full_tree_with_stripped_prefix(tmp_path: Pa
         ),
     )
 
-    outputs = apply_archive_tree(package, archive_path, bundle_root)
+    outputs = apply_archive_tree(package, archive_path, bundle_root, "x86_64")
 
     assert outputs == [
         bundle_root / "fish" / "bin" / "fish",

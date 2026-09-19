@@ -18,7 +18,7 @@ def _download_destination(package_id: str, strategy_type: str, downloads_dir: Pa
 
 
 def _download_suffix(args_arch: str, package) -> str:
-    if package.source.type in {"github_archive", "local_file"}:
+    if package.source.type in {"github_archive", "github_release_source", "local_file"}:
         return ".tar.gz"
     if package.strategy.type == "direct_binary":
         return ".bin"
@@ -60,7 +60,15 @@ def build_command(args) -> int:
     layout = BuildLayout(Path(args.build_root), args.profile, args.arch)
 
     if layout.work_dir.exists():
-        shutil.rmtree(layout.work_dir)
+        try:
+            shutil.rmtree(layout.work_dir)
+        except PermissionError as exc:
+            raise RuntimeError(
+                f"cannot clean build work directory {layout.work_dir}: {exc}. "
+                "This directory may be owned by a different user (e.g. root from a "
+                "previous container build). Use --build-root to specify an "
+                "alternative location, e.g. --build-root /tmp/red-env-build"
+            ) from exc
 
     offline_root = layout.bundle_dir
     downloads_dir = layout.downloads_dir
@@ -79,7 +87,7 @@ def build_command(args) -> int:
         destination = downloads_dir / f"{package.id}-{args.arch}{_download_suffix(args.arch, package)}"
         downloaded_asset = download_package_asset(package, args.arch, destination, manifest_root.resolve())
         strategy_handler = STRATEGY_REGISTRY[package.strategy.type]
-        strategy_handler(package, downloaded_asset, bundle_root)
+        strategy_handler(package, downloaded_asset, bundle_root, args.arch)
 
     _stage_static_assets(manifest_root.resolve(), offline_root)
     write_bundle_metadata(

@@ -4,15 +4,11 @@ profiles = ["extended"]
 architectures = ["x86_64", "arm64"]
 
 [source]
-type = "github_release"
+type = "github_release_source"
 repo = "ouch-org/ouch"
 
 [strategy]
-type = "archive_extract"
-
-[strategy.match]
-x86_64 = '(?i)^ouch-x86_64-unknown-linux-musl\.tar\.gz$'
-arm64 = '(?i)^ouch-aarch64-unknown-linux-musl\.tar\.gz$'
+type = "zig_build"
 
 [strategy.extract]
 include = ["ouch"]

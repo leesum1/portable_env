@@ -14,7 +14,7 @@ def _strip_path(path: str, strip_components: int) -> Path | None:
     return Path(*parts[strip_components:])
 
 
-def apply_archive_tree(package: PackageSpec, downloaded_asset: Path, bundle_root: Path) -> list[Path]:
+def apply_archive_tree(package: PackageSpec, downloaded_asset: Path, bundle_root: Path, arch: str) -> list[Path]:
     target_dir_value = package.strategy.extract.get("target_dir", "")
     strip_components = int(package.strategy.extract.get("strip_components", 0))
     target_root = bundle_root / target_dir_value if target_dir_value else bundle_root

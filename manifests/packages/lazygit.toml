@@ -4,16 +4,12 @@ profiles = ["extended"]
 architectures = ["x86_64", "arm64"]
 
 [source]
-type = "github_release"
+type = "github_release_source"
 repo = "jesseduffield/lazygit"
 
 [strategy]
-type = "archive_extract"
-
-[strategy.match]
-x86_64 = '(?i)^lazygit_.*_Linux_x86_64\.tar\.gz$'
-arm64 = '(?i)^lazygit_.*_Linux_arm64\.tar\.gz$'
+type = "go_build"
 
 [strategy.extract]
-include = ["lazygit"]
 target_dir = "bin"
+binary_name = "lazygit"

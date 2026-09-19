@@ -16,3 +16,14 @@ Thumbs.db
 *.swo
 *~
 .vscode-ctags
+
+# AI tool configs (not part of this repo)
+opencode.json
+
+# Build artifacts (local toolchain bundles)
+zig.tar.xz
+zig/
+
+# pip metadata
+*.egg-info/
+

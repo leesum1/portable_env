@@ -6,7 +6,7 @@ from pathlib import Path
 from red_env.manifest.models import PackageSpec
 
 
-def apply_directory_copy(package: PackageSpec, downloaded_asset: Path, bundle_root: Path) -> list[Path]:
+def apply_directory_copy(package: PackageSpec, downloaded_asset: Path, bundle_root: Path, arch: str) -> list[Path]:
     target_dir = bundle_root / package.strategy.extract["target_dir"]
     target_dir.mkdir(parents=True, exist_ok=True)
     destination = target_dir / downloaded_asset.name

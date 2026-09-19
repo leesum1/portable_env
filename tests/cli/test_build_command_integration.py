@@ -5,18 +5,48 @@ import zipfile
 from pathlib import Path
 
 from red_env.cli.app import main
+from red_env.strategies.registry import STRATEGY_REGISTRY
+
+
+def _fake_zig_build(package, downloaded_asset, bundle_root, arch):
+    target_dir = bundle_root / package.strategy.extract.get("target_dir", "bin")
+    target_dir.mkdir(parents=True, exist_ok=True)
+    include = package.strategy.extract.get("include", [package.id])
+    written = []
+    for name in include:
+        dest = target_dir / name
+        dest.write_text(f"#!/bin/sh\necho {name}\n", encoding="utf-8")
+        dest.chmod(0o755)
+        written.append(dest)
+    return written
+
+
+def _fake_go_build(package, downloaded_asset, bundle_root, arch):
+    target_dir = bundle_root / package.strategy.extract.get("target_dir", "bin")
+    target_dir.mkdir(parents=True, exist_ok=True)
+    binary_name = package.strategy.extract.get("binary_name", package.id)
+    include = package.strategy.extract.get("include", [binary_name])
+    written = []
+    for name in include:
+        dest = target_dir / name
+        dest.write_text(f"#!/bin/sh\necho {name}\n", encoding="utf-8")
+        dest.chmod(0o755)
+        written.append(dest)
+    return written
 
 
 def test_build_command_stages_tools_configs_installer_and_metadata(tmp_path: Path, monkeypatch):
     build_root = tmp_path / "build"
     dist_root = tmp_path / "dist"
 
+    monkeypatch.setitem(STRATEGY_REGISTRY, "zig_build", _fake_zig_build)
+    monkeypatch.setitem(STRATEGY_REGISTRY, "go_build", _fake_go_build)
+
     def fake_download(package, arch, destination, manifest_root=None):
         destination.parent.mkdir(parents=True, exist_ok=True)
         with tarfile.open(destination, "w:gz") as archive:
             files = {package.id: f"#!/bin/sh\necho {package.id}-{arch}\n".encode("utf-8")}
             if package.id == "zsh":
-                # zsh is now a tarball archive copied as-is
                 files = {
                     "zsh-5.8-linux-x86_64/bin/zsh": b"#!/bin/sh\necho zsh\n",
                     "zsh-5.8-linux-x86_64/share/zsh/5.8/functions/_red_env": b"#compdef red_env\n",
@@ -60,7 +90,6 @@ def test_build_command_stages_tools_configs_installer_and_metadata(tmp_path: Pat
         assert "red_env_offline/bundle/bin/rg" in members
         assert "red_env_offline/bundle/bin/fd" in members
         assert "red_env_offline/bundle/bin/delta" in members
-        # zsh is now a tarball in zsh-bin/ directory (installed via romkatv/zsh-bin install script)
         assert "red_env_offline/bundle/zsh-bin/zsh-5.8-linux.tar.gz" in members
         assert "red_env_offline/bundle/zsh-bin/install" in members
         assert "red_env_offline/configs/zsh/zshrc" in members
@@ -87,6 +116,9 @@ def test_build_command_extended_profile_stages_offline_oh_my_zsh_runtime(tmp_pat
     build_root = tmp_path / "build"
     dist_root = tmp_path / "dist"
 
+    monkeypatch.setitem(STRATEGY_REGISTRY, "zig_build", _fake_zig_build)
+    monkeypatch.setitem(STRATEGY_REGISTRY, "go_build", _fake_go_build)
+
     def fake_download(package, arch, destination, manifest_root=None):
         destination.parent.mkdir(parents=True, exist_ok=True)
         strategy_type = package.strategy.type
@@ -103,7 +135,6 @@ def test_build_command_extended_profile_stages_offline_oh_my_zsh_runtime(tmp_pat
                     archive.addfile(info, io.BytesIO(payload))
             return destination
         if package.id == "zsh":
-            # zsh is a tarball archive copied as-is
             with tarfile.open(destination, "w:gz") as archive:
                 files = {
                     "zsh-5.8-linux-x86_64/bin/zsh": b"#!/bin/sh\necho zsh\n",
@@ -138,44 +169,20 @@ def test_build_command_extended_profile_stages_offline_oh_my_zsh_runtime(tmp_pat
                 info.mode = 0o755
                 archive.addfile(info, io.BytesIO(payload))
             return destination
-        if package.id == "yazi":
-            with zipfile.ZipFile(destination, "w") as archive:
-                archive.writestr("yazi-x86_64-unknown-linux-musl/ya", "#!/bin/sh\necho ya\n")
-                archive.writestr("yazi-x86_64-unknown-linux-musl/yazi", "#!/bin/sh\necho yazi\n")
-            return destination
         if package.id == "fastfetch":
-            # fastfetch uses zip archives
             with zipfile.ZipFile(destination, "w") as archive:
                 archive.writestr("fastfetch", "#!/bin/sh\necho fastfetch\n")
             return destination
-        if package.id == "uv":
-            # uv includes both uv and uvx
-            with tarfile.open(destination, "w:gz") as archive:
-                for name in ["uv", "uvx"]:
-                    payload = f"#!/bin/sh\necho {name}\n".encode("utf-8")
-                    info = tarfile.TarInfo(name)
-                    info.size = len(payload)
-                    info.mode = 0o755
-                    archive.addfile(info, io.BytesIO(payload))
-            return destination
         if package.id == "jq":
-            # jq uses github_release + direct_binary
             destination.write_text("#!/bin/sh\necho jq\n", encoding="utf-8")
             return destination
-        if package.id == "yq":
-            # yq uses github_release + direct_binary
-            destination.write_text("#!/bin/sh\necho yq\n", encoding="utf-8")
-            return destination
         if package.id == "font-jetbrains-maple-mono":
-            # font uses local_file + direct_binary
             destination.write_text("fake-ttf-font-data", encoding="utf-8")
             return destination
         if package.id == "forceterm":
-            # forceterm uses local_file + direct_binary (AppImage)
             destination.write_text("fake-appimage-data", encoding="utf-8")
             return destination
         if package.id == "upx":
-            # upx uses github_release + archive_extract with .tar.xz
             with tarfile.open(destination, "w:xz") as archive:
                 payload = b"#!/bin/sh\necho upx\n"
                 info = tarfile.TarInfo("upx")
@@ -214,7 +221,6 @@ def test_build_command_extended_profile_stages_offline_oh_my_zsh_runtime(tmp_pat
     tarball_path = dist_root / "red_env_extended_x86_64.tar.gz"
     with tarfile.open(tarball_path, "r:gz") as archive:
         members = set(archive.getnames())
-        # zsh is now a tarball in zsh-bin/ directory
         assert "red_env_offline/bundle/zsh-bin/zsh-5.8-linux.tar.gz" in members
         assert "red_env_offline/bundle/zsh-bin/install" in members
         assert "red_env_offline/bundle/cache/oh-my-zsh/oh-my-zsh.sh" in members

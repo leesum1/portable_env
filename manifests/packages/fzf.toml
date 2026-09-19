@@ -4,16 +4,12 @@ profiles = ["core"]
 architectures = ["x86_64", "arm64"]
 
 [source]
-type = "github_release"
+type = "github_release_source"
 repo = "junegunn/fzf"
 
 [strategy]
-type = "archive_extract"
-
-[strategy.match]
-x86_64 = '(?i).*linux.*amd64.*tar.gz$'
-arm64 = '(?i).*linux.*arm64.*tar.gz$'
+type = "go_build"
 
 [strategy.extract]
-include = ["fzf"]
 target_dir = "bin"
+binary_name = "fzf"

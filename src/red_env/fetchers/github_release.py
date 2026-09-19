@@ -84,6 +84,13 @@ def download_package_asset(package: PackageSpec, arch: str, destination: Path, m
         _download_to_path(asset_url, destination)
         return destination
 
+    if package.source.type == "github_release_source":
+        api_url = f"https://api.github.com/repos/{package.source.repo}/releases/latest"
+        release_payload = _fetch_json(api_url)
+        tag_name = release_payload["tag_name"]
+        _download_github_archive(package.source.repo, tag_name, destination)
+        return destination
+
     if package.source.type == "github_archive":
         ref = package.source.ref or "master"
         _download_github_archive(package.source.repo, ref, destination)
@@ -125,9 +132,14 @@ def _fetch_json(url: str) -> dict:
             remaining = _header_value(exc, "X-RateLimit-Remaining")
             reset = _header_value(exc, "X-RateLimit-Reset")
             token_used = "yes" if _github_token() else "no"
+            hint = (
+                "\nHint: set GH_TOKEN or GITHUB_TOKEN to avoid anonymous rate limits.\n"
+                "  export GH_TOKEN=$(gh auth token)"
+            ) if not _github_token() else ""
             raise RuntimeError(
                 "GitHub API rate limit exceeded while requesting "
                 f"{url} (status={exc.code}, remaining={remaining}, reset={reset}, auth_token={token_used})"
+                f"{hint}"
             ) from exc
         raise
 

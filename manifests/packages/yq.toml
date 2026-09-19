@@ -4,16 +4,12 @@ profiles = ["extended"]
 architectures = ["x86_64", "arm64"]
 
 [source]
-type = "github_release"
+type = "github_release_source"
 repo = "mikefarah/yq"
 
 [strategy]
-type = "direct_binary"
-
-[strategy.match]
-x86_64 = '(?i)^yq_linux_amd64$'
-arm64 = '(?i)^yq_linux_arm64$'
+type = "go_build"
 
 [strategy.extract]
 target_dir = "bin"
-target_name = "yq"
+binary_name = "yq"

@@ -22,7 +22,7 @@ def test_apply_direct_binary_supports_custom_target_name_and_directory(tmp_path:
         ),
     )
 
-    outputs = apply_direct_binary(package, downloaded_asset, bundle_root)
+    outputs = apply_direct_binary(package, downloaded_asset, bundle_root, "x86_64")
 
     assert outputs == [bundle_root / "cache" / "tools" / "tool.bin"]
     assert (bundle_root / "cache" / "tools" / "tool.bin").read_text(encoding="utf-8") == "# tool\n"
@@ -46,7 +46,7 @@ def test_apply_direct_binary_copies_asset_as_is(tmp_path: Path):
         ),
     )
 
-    outputs = apply_direct_binary(package, downloaded_asset, bundle_root)
+    outputs = apply_direct_binary(package, downloaded_asset, bundle_root, "x86_64")
 
     assert outputs == [bundle_root / "tool-dir" / "tool.tar.gz"]
     assert (bundle_root / "tool-dir" / "tool.tar.gz").read_text(encoding="utf-8") == "# fake archive\n"

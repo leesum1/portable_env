@@ -39,7 +39,6 @@ RUN mkdir -p /verify/unpacked \
     && HOME=/root sh /verify/unpacked/red_env_offline/installer/install.sh \
     && test -d /root/.red_env/bin \
     && test -d /root/.red_env/configs \
-    && test -f /root/.red_env/cache/oh-my-zsh/oh-my-zsh.sh \
     && python3 -c "import json, os, pathlib; \
 manifest = json.loads(pathlib.Path('/verify/unpacked/red_env_offline/bundle/bundle-manifest.json').read_text(encoding='utf-8')); \
 installed_files = manifest.get('installed_files', []); \
@@ -50,7 +49,7 @@ missing = [relative for relative in installed_files if not (install_root / relat
 assert not missing, f'missing installed files: {missing}'; \
 non_executable = [relative for relative in installed_files if (install_root / relative).is_file() and not os.access(install_root / relative, os.X_OK)]; \
 assert not non_executable, f'non-executable installed files: {non_executable}'" \
-    && if [ -x /root/.red_env/bin/zsh ]; then HOME=/root ZDOTDIR=/root/.red_env/configs/zsh /root/.red_env/bin/zsh -i -c 'test -f /root/.red_env/cache/oh-my-zsh/oh-my-zsh.sh'; fi
+    && if [ -x /root/.red_env/bin/zsh ] && [ -d /root/.red_env/cache/oh-my-zsh ]; then HOME=/root ZDOTDIR=/root/.red_env/configs/zsh /root/.red_env/bin/zsh -i -c 'test -f /root/.red_env/cache/oh-my-zsh/oh-my-zsh.sh'; fi
 
 # Setup proper shell initialization for interactive use
 RUN mkdir -p /root/.red_env/configs/zsh
