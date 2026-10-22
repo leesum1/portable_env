@@ -1,2 +1,10 @@
 manifest_version = 1
 package_dir = "packages"
+
+# Toolchain pins for source builds. Every zig_build package compiles with the
+# Rust version below, every go_build package with the Go version below; a
+# package may override either pin with rust_version / go_version in its own
+# [strategy.extract] table.
+[toolchains]
+rust = "1.99.1"
+go = "1.27.3"

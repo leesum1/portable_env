@@ -5,10 +5,28 @@ from pathlib import Path
 
 from red_env.manifest.models import BundleSpec, ManifestSpec, PackageSpec, ProfileSpec, SourceSpec, StrategySpec
 
+# Strategy types that compile from a source archive and therefore need a pinned
+# toolchain version (filled from the manifest-level [toolchains] defaults).
+_TOOLCHAIN_KEYS = {
+    "zig_build": ("rust_version", "rust"),
+    "go_build": ("go_version", "go"),
+}
+
 
 def _read_toml(path: Path) -> dict:
     with path.open("rb") as handle:
         return tomllib.load(handle)
+
+
+def _strategy_extract(package_data: dict, toolchains: dict[str, str]) -> dict[str, object]:
+    strategy_data = package_data["strategy"]
+    extract = dict(strategy_data.get("extract", {}))
+    pinned_key = _TOOLCHAIN_KEYS.get(strategy_data["type"])
+    if pinned_key is not None:
+        package_key, default_key = pinned_key
+        if not extract.get(package_key) and toolchains.get(default_key):
+            extract[package_key] = toolchains[default_key]
+    return extract
 
 
 def load_manifest(manifest_root: Path) -> ManifestSpec:
@@ -18,6 +36,8 @@ def load_manifest(manifest_root: Path) -> ManifestSpec:
     manifest_version = int(manifest_data["manifest_version"])
     if manifest_version != 1:
         raise ValueError(f"unsupported manifest_version: {manifest_version}")
+
+    toolchains = {str(key): str(value) for key, value in manifest_data.get("toolchains", {}).items()}
 
     package_dir = manifest_root / manifest_data["package_dir"]
     packages: dict[str, PackageSpec] = {}
@@ -32,7 +52,7 @@ def load_manifest(manifest_root: Path) -> ManifestSpec:
             strategy=StrategySpec(
                 type=package_data["strategy"]["type"],
                 match=dict(package_data["strategy"].get("match", {})),
-                extract=dict(package_data["strategy"].get("extract", {})),
+                extract=_strategy_extract(package_data, toolchains),
             ),
         )
         packages[package.id] = package
@@ -51,4 +71,5 @@ def load_manifest(manifest_root: Path) -> ManifestSpec:
         bundle=BundleSpec(layout=dict(bundle_data["layout"])),
         profiles=profiles,
         packages=packages,
+        toolchains=toolchains,
     )

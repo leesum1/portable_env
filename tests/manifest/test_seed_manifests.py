@@ -63,3 +63,15 @@ def test_repo_manifests_define_extended_profile_with_modern_tooling():
         "zsh",
         "zsh-bin-install-script",
     ]
+
+
+def test_repo_manifests_pin_the_source_build_toolchains():
+    manifest = load_manifest(Path("manifests"))
+
+    assert manifest.toolchains == {"rust": "1.99.1", "go": "1.27.3"}
+
+    for package in manifest.packages.values():
+        if package.strategy.type == "zig_build":
+            assert package.strategy.extract["rust_version"] == "1.99.1", package.id
+        if package.strategy.type == "go_build":
+            assert package.strategy.extract["go_version"] == "1.27.3", package.id

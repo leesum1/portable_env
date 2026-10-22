@@ -25,3 +25,12 @@ class BuildLayout:
     @property
     def logs_dir(self) -> Path:
         return self.root / "logs" / self.profile / self.arch
+
+    @property
+    def cache_dir(self) -> Path:
+        """Shared toolchain cache.
+
+        Deliberately outside ``work_dir``: the work tree is wiped before every
+        build, while this directory must survive to make rebuilds cheap.
+        """
+        return self.root / "cache"

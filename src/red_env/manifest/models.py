@@ -46,3 +46,4 @@ class ManifestSpec:
     bundle: BundleSpec
     profiles: dict[str, ProfileSpec]
     packages: dict[str, PackageSpec]
+    toolchains: dict[str, str] = field(default_factory=dict)

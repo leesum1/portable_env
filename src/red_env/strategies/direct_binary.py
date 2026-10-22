@@ -6,7 +6,13 @@ from pathlib import Path
 from red_env.manifest.models import PackageSpec
 
 
-def apply_direct_binary(package: PackageSpec, downloaded_asset: Path, bundle_root: Path, arch: str) -> list[Path]:
+def apply_direct_binary(
+    package: PackageSpec,
+    downloaded_asset: Path,
+    bundle_root: Path,
+    arch: str,
+    cache_dir: Path | None = None,
+) -> list[Path]:
     target_dir = bundle_root / package.strategy.extract.get("target_dir", "bin")
     target_dir.mkdir(parents=True, exist_ok=True)
     target_name = package.strategy.extract.get("target_name", package.id)
