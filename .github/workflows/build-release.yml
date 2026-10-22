@@ -19,6 +19,24 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23.6"
+      - name: Install Rust toolchain with musl targets
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+          . "$HOME/.cargo/env"
+          rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - name: Install cargo-zigbuild
+        run: cargo install cargo-zigbuild --locked
+      - name: Install Zig
+        run: |
+          curl -sSL "https://ziglang.org/download/0.14.0/zig-linux-${{ runner.arch == 'ARM64' && 'aarch64' || 'x86_64' }}-0.14.0.tar.xz" -o /tmp/zig.tar.xz
+          sudo mkdir -p /opt/zig
+          sudo tar -xf /tmp/zig.tar.xz -C /opt/zig --strip-components=1
+          echo "/opt/zig" >> "$GITHUB_PATH"
+          /opt/zig/zig version
       - run: python -m pip install -e .[dev]
       - run: mkdir -p "$GITHUB_WORKSPACE/build" "$GITHUB_WORKSPACE/dist"
       - run: python -m red_env manifest lint --manifest-root "$GITHUB_WORKSPACE/manifests"
@@ -44,6 +62,24 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23.6"
+      - name: Install Rust toolchain with musl targets
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+          . "$HOME/.cargo/env"
+          rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - name: Install cargo-zigbuild
+        run: cargo install cargo-zigbuild --locked
+      - name: Install Zig
+        run: |
+          curl -sSL "https://ziglang.org/download/0.14.0/zig-linux-${{ runner.arch == 'ARM64' && 'aarch64' || 'x86_64' }}-0.14.0.tar.xz" -o /tmp/zig.tar.xz
+          sudo mkdir -p /opt/zig
+          sudo tar -xf /tmp/zig.tar.xz -C /opt/zig --strip-components=1
+          echo "/opt/zig" >> "$GITHUB_PATH"
+          /opt/zig/zig version
       - run: python -m pip install -e .[dev]
       - run: mkdir -p "$GITHUB_WORKSPACE/build" "$GITHUB_WORKSPACE/dist"
       - run: python -m red_env manifest lint --manifest-root "$GITHUB_WORKSPACE/manifests"
