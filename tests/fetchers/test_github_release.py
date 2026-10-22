@@ -6,8 +6,10 @@ import tomllib
 
 import pytest
 
+from red_env._version import __version__
 from red_env.fetchers.github_release import download_package_asset, select_asset_url
 from red_env.fetchers import github_release
+from red_env.fetchers.token import reset_token_cache
 from red_env.manifest.models import PackageSpec, SourceSpec, StrategySpec
 
 
@@ -132,7 +134,7 @@ def test_fetch_json_adds_bearer_header_from_gh_token(monkeypatch):
     assert payload == {"assets": []}
     assert captured["authorization"] == "Bearer gh-token-value"
     assert captured["accept"] == "application/vnd.github+json"
-    assert captured["user_agent"] == "red-env/0.1.0"
+    assert captured["user_agent"] == f"red-env/{__version__}"
 
 
 def test_fetch_json_falls_back_to_github_token(monkeypatch):
@@ -184,6 +186,8 @@ def test_fetch_json_raises_clear_error_on_rate_limit(monkeypatch):
 def test_fetch_json_rate_limit_hint_when_no_token(monkeypatch):
     monkeypatch.delenv("GH_TOKEN", raising=False)
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.setattr("red_env.fetchers.token.shutil.which", lambda _name: None)
+    reset_token_cache()
 
     def fake_urlopen(request, timeout):
         raise HTTPError(

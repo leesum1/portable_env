@@ -1,16 +1,20 @@
 from __future__ import annotations
 
 import json
-import os
 import re
+import time
 import shutil
 import urllib.error
 import urllib.request
 from pathlib import Path
 
+from red_env._version import __version__
+from red_env.fetchers.token import github_token
 from red_env.manifest.models import PackageSpec
 
 _NETWORK_TIMEOUT = 30
+_RETRY_ATTEMPTS = 4
+_RETRY_BACKOFF_SECONDS = 2.0
 
 
 def select_asset_url(release_payload: dict, regex: str) -> str:
@@ -123,17 +127,20 @@ def _download_github_archive(repo: str, ref: str, destination: Path) -> None:
 
 
 def _fetch_json(url: str) -> dict:
-    request = _github_request(url)
-    try:
+    def attempt() -> dict:
+        request = _github_request(url)
         with urllib.request.urlopen(request, timeout=_NETWORK_TIMEOUT) as response:
             return json.load(response)
+
+    try:
+        return _with_retries(attempt, url)
     except urllib.error.HTTPError as exc:
         if _is_rate_limited(exc):
             remaining = _header_value(exc, "X-RateLimit-Remaining")
             reset = _header_value(exc, "X-RateLimit-Reset")
             token_used = "yes" if _github_token() else "no"
             hint = (
-                "\nHint: set GH_TOKEN or GITHUB_TOKEN to avoid anonymous rate limits.\n"
+                "\nHint: red_env uses GH_TOKEN, then GITHUB_TOKEN, then `gh auth token` automatically.\n"
                 "  export GH_TOKEN=$(gh auth token)"
             ) if not _github_token() else ""
             raise RuntimeError(
@@ -145,15 +152,43 @@ def _fetch_json(url: str) -> dict:
 
 
 def _download_to_path(url: str, destination: Path) -> None:
-    request = _github_request(url)
-    with urllib.request.urlopen(request, timeout=_NETWORK_TIMEOUT) as response, destination.open("wb") as handle:
-        shutil.copyfileobj(response, handle)
+    def attempt() -> None:
+        request = _github_request(url)
+        with urllib.request.urlopen(request, timeout=_NETWORK_TIMEOUT) as response, destination.open("wb") as handle:
+            shutil.copyfileobj(response, handle)
+
+    _with_retries(attempt, url)
+
+
+def _with_retries(operation, url: str):
+    """Run a network operation, retrying transient failures.
+
+    Downloads and API calls occasionally fail with a dropped TLS session or a
+    5xx response; those are worth retrying, while a 4xx (rate limit, missing
+    asset) is not.
+    """
+    last_error: Exception | None = None
+    for attempt_number in range(1, _RETRY_ATTEMPTS + 1):
+        try:
+            return operation()
+        except urllib.error.HTTPError as exc:
+            if exc.code != 429 and exc.code < 500:
+                raise
+            last_error = exc
+        except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
+            last_error = exc
+        if attempt_number == _RETRY_ATTEMPTS:
+            break
+        time.sleep(_RETRY_BACKOFF_SECONDS * attempt_number)
+    raise RuntimeError(
+        f"network request failed after {_RETRY_ATTEMPTS} attempts: {url}: {last_error}"
+    ) from last_error
 
 
 def _github_request(url: str) -> urllib.request.Request:
     headers = {
         "Accept": "application/vnd.github+json",
-        "User-Agent": "red-env/0.1.0",
+        "User-Agent": f"red-env/{__version__}",
     }
     token = _github_token()
     if token:
@@ -162,7 +197,7 @@ def _github_request(url: str) -> urllib.request.Request:
 
 
 def _github_token() -> str | None:
-    return os.getenv("GH_TOKEN") or os.getenv("GITHUB_TOKEN")
+    return github_token()
 
 
 def _header_value(error: urllib.error.HTTPError, header: str) -> str:
