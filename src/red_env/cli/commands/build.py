@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 
@@ -10,11 +11,6 @@ from red_env.manifest.resolver import resolve_profile, validate_manifest
 from red_env.packaging.builder import build_artifact
 from red_env.packaging.layout import BuildLayout
 from red_env.strategies.registry import STRATEGY_REGISTRY
-
-
-def _download_destination(package_id: str, strategy_type: str, downloads_dir: Path, arch: str) -> Path:
-    extension = ".tar.gz" if strategy_type in {"archive_extract", "archive_tree"} else ".bin"
-    return downloads_dir / f"{package_id}-{arch}{extension}"
 
 
 def _download_suffix(args_arch: str, package) -> str:
@@ -52,12 +48,25 @@ def _installed_files(bundle_root: Path) -> list[str]:
     return sorted(str(path.relative_to(bundle_root)) for path in bin_root.rglob("*") if path.is_file())
 
 
+def _resolve_cache_dir(args, layout: BuildLayout) -> Path:
+    value = getattr(args, "cache_root", None)
+    if value:
+        return Path(value).expanduser().resolve()
+    return layout.cache_dir.resolve()
+
+
 def build_command(args) -> int:
+    if getattr(args, "in_docker", False) and os.environ.get("RED_ENV_IN_DOCKER") != "1":
+        from red_env.packaging.docker_builder import run_build_in_docker
+
+        return run_build_in_docker(args)
+
     manifest_root = Path(args.manifest_root)
     manifest = load_manifest(manifest_root)
     validate_manifest(manifest)
     package_ids = resolve_profile(manifest, args.profile)
     layout = BuildLayout(Path(args.build_root), args.profile, args.arch)
+    cache_dir = _resolve_cache_dir(args, layout)
 
     if layout.work_dir.exists():
         try:
@@ -75,6 +84,7 @@ def build_command(args) -> int:
     bundle_root = offline_root / "bundle"
     downloads_dir.mkdir(parents=True, exist_ok=True)
     bundle_root.mkdir(parents=True, exist_ok=True)
+    cache_dir.mkdir(parents=True, exist_ok=True)
 
     for relative_dir in manifest.bundle.layout.values():
         (bundle_root / relative_dir).mkdir(parents=True, exist_ok=True)
@@ -87,7 +97,7 @@ def build_command(args) -> int:
         destination = downloads_dir / f"{package.id}-{args.arch}{_download_suffix(args.arch, package)}"
         downloaded_asset = download_package_asset(package, args.arch, destination, manifest_root.resolve())
         strategy_handler = STRATEGY_REGISTRY[package.strategy.type]
-        strategy_handler(package, downloaded_asset, bundle_root, args.arch)
+        strategy_handler(package, downloaded_asset, bundle_root, args.arch, cache_dir=cache_dir)
 
     _stage_static_assets(manifest_root.resolve(), offline_root)
     write_bundle_metadata(

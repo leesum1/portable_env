@@ -34,6 +34,39 @@ def build_parser() -> argparse.ArgumentParser:
     build_parser.add_argument("--manifest-root", default="manifests")
     build_parser.add_argument("--build-root", default="build")
     build_parser.add_argument("--dist-root", default="dist")
+    build_parser.add_argument(
+        "--cache-root",
+        default=None,
+        help="Directory for reusable toolchain caches (defaults to <build-root>/cache).",
+    )
+    build_parser.add_argument(
+        "--in-docker",
+        action="store_true",
+        help="Run the build inside the hermetic builder image instead of the host.",
+    )
+    build_parser.add_argument(
+        "--builder-image",
+        default=None,
+        help="Builder image used by --in-docker (defaults to red-env-builder:full).",
+    )
+    build_parser.add_argument(
+        "--builder-dockerfile",
+        default=None,
+        help="Dockerfile used to build the builder image (defaults to docker/builder-full.Dockerfile).",
+    )
+    build_parser.add_argument(
+        "--rebuild-builder",
+        action="store_true",
+        help="Rebuild the builder image before running an --in-docker build.",
+    )
+    build_parser.add_argument(
+        "--docker-network",
+        default=None,
+        help=(
+            "Docker network mode for --in-docker (defaults to host, which also works on "
+            "machines whose daemon cannot create veth pairs)."
+        ),
+    )
     build_parser.set_defaults(handler=build_command)
 
     verify_parser = subparsers.add_parser("verify")
@@ -41,6 +74,11 @@ def build_parser() -> argparse.ArgumentParser:
     verify_parser.add_argument("--arch", required=True)
     verify_parser.add_argument("--dockerfile", default="docker/verifier.Dockerfile")
     verify_parser.add_argument("--interactive", action="store_true")
+    verify_parser.add_argument(
+        "--docker-network",
+        default=None,
+        help="Docker network mode for the verifier (defaults to host).",
+    )
     verify_parser.set_defaults(handler=verify_command)
 
     release_parser = subparsers.add_parser("release")

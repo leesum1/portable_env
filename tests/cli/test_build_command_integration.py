@@ -3,12 +3,13 @@ import json
 import tarfile
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 
 from red_env.cli.app import main
 from red_env.strategies.registry import STRATEGY_REGISTRY
 
 
-def _fake_zig_build(package, downloaded_asset, bundle_root, arch):
+def _fake_zig_build(package, downloaded_asset, bundle_root, arch, cache_dir=None):
     target_dir = bundle_root / package.strategy.extract.get("target_dir", "bin")
     target_dir.mkdir(parents=True, exist_ok=True)
     include = package.strategy.extract.get("include", [package.id])
@@ -21,7 +22,7 @@ def _fake_zig_build(package, downloaded_asset, bundle_root, arch):
     return written
 
 
-def _fake_go_build(package, downloaded_asset, bundle_root, arch):
+def _fake_go_build(package, downloaded_asset, bundle_root, arch, cache_dir=None):
     target_dir = bundle_root / package.strategy.extract.get("target_dir", "bin")
     target_dir.mkdir(parents=True, exist_ok=True)
     binary_name = package.strategy.extract.get("binary_name", package.id)
@@ -263,3 +264,126 @@ def test_build_command_extended_profile_stages_offline_oh_my_zsh_runtime(tmp_pat
         assert "zsh" in manifest_payload["packages"]
         assert "zellij" in manifest_payload["packages"]
         assert "bin/zellij" in manifest_payload["installed_files"]
+
+def _recording_strategies(seen: list):
+    def recording_zig_build(package, downloaded_asset, bundle_root, arch, cache_dir=None):
+        seen.append(cache_dir)
+        return _fake_zig_build(package, downloaded_asset, bundle_root, arch, cache_dir)
+
+    def recording_go_build(package, downloaded_asset, bundle_root, arch, cache_dir=None):
+        seen.append(cache_dir)
+        return _fake_go_build(package, downloaded_asset, bundle_root, arch, cache_dir)
+
+    return recording_zig_build, recording_go_build
+
+
+def _generic_download(package, arch, destination, manifest_root=None):
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tarfile.open(destination, "w:gz") as archive:
+        files = {package.id: f"#!/bin/sh\necho {package.id}-{arch}\n".encode("utf-8")}
+        if package.id == "zsh":
+            files = {
+                "zsh-5.8-linux-x86_64/bin/zsh": b"#!/bin/sh\necho zsh\n",
+                "zsh-5.8-linux-x86_64/install": b"#!/bin/sh\necho install\n",
+            }
+        for name, payload in files.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(payload)
+            info.mode = 0o755
+            archive.addfile(info, io.BytesIO(payload))
+    return destination
+
+
+def _run_core_build(tmp_path: Path, monkeypatch, extra_args: list[str]):
+    build_root = tmp_path / "build"
+    dist_root = tmp_path / "dist"
+    seen: list = []
+    zig, go = _recording_strategies(seen)
+    monkeypatch.setitem(STRATEGY_REGISTRY, "zig_build", zig)
+    monkeypatch.setitem(STRATEGY_REGISTRY, "go_build", go)
+    monkeypatch.setattr("red_env.cli.commands.build.download_package_asset", _generic_download)
+    exit_code = main(
+        [
+            "build",
+            "--profile",
+            "core",
+            "--arch",
+            "x86_64",
+            "--manifest-root",
+            "manifests",
+            "--build-root",
+            str(build_root),
+            "--dist-root",
+            str(dist_root),
+            *extra_args,
+        ]
+    )
+    return exit_code, seen, build_root
+
+
+def test_build_command_defaults_the_cache_outside_the_wiped_work_tree(tmp_path: Path, monkeypatch):
+    exit_code, seen, build_root = _run_core_build(tmp_path, monkeypatch, [])
+
+    assert exit_code == 0
+    assert seen
+    expected = (build_root / "cache").resolve()
+    assert all(entry == expected for entry in seen), seen
+    work_dir = (build_root / "work").resolve()
+    assert work_dir not in expected.parents
+
+
+def test_build_command_honours_a_shared_cache_root(tmp_path: Path, monkeypatch):
+    shared = tmp_path / "shared-cache"
+    exit_code, seen, _ = _run_core_build(tmp_path, monkeypatch, ["--cache-root", str(shared)])
+
+    assert exit_code == 0
+    assert seen
+    assert all(entry == shared.resolve() for entry in seen), seen
+    assert shared.is_dir()
+
+
+def test_build_command_dispatches_to_the_docker_builder(tmp_path: Path, monkeypatch):
+    calls: list = []
+    monkeypatch.delenv("RED_ENV_IN_DOCKER", raising=False)
+    monkeypatch.setattr(
+        "red_env.packaging.docker_builder.run_build_in_docker",
+        lambda args: calls.append(args) or 0,
+    )
+
+    from red_env.cli.commands.build import build_command
+
+    exit_code = build_command(
+        SimpleNamespace(profile="core", arch="x86_64", in_docker=True, manifest_root="manifests")
+    )
+
+    assert exit_code == 0
+    assert len(calls) == 1
+
+
+def test_build_command_does_not_recurse_inside_the_container(tmp_path: Path, monkeypatch):
+    calls: list = []
+    monkeypatch.setenv("RED_ENV_IN_DOCKER", "1")
+    monkeypatch.setattr(
+        "red_env.packaging.docker_builder.run_build_in_docker",
+        lambda args: calls.append(args) or 0,
+    )
+    monkeypatch.setitem(STRATEGY_REGISTRY, "zig_build", _fake_zig_build)
+    monkeypatch.setitem(STRATEGY_REGISTRY, "go_build", _fake_go_build)
+    monkeypatch.setattr("red_env.cli.commands.build.download_package_asset", _generic_download)
+
+    from red_env.cli.commands.build import build_command
+
+    exit_code = build_command(
+        SimpleNamespace(
+            profile="core",
+            arch="x86_64",
+            in_docker=True,
+            manifest_root="manifests",
+            build_root=str(tmp_path / "build"),
+            dist_root=str(tmp_path / "dist"),
+            cache_root=None,
+        )
+    )
+
+    assert exit_code == 0
+    assert calls == []

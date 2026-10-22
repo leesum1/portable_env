@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from red_env.verification.docker import run_verifier
+from red_env.verification.docker import DEFAULT_DOCKER_NETWORK, run_verifier
 
 
 def verify_command(args) -> int:
@@ -23,7 +23,13 @@ def verify_command(args) -> int:
                 f"but verification requested '{requested_arch}'. Use '--arch {artifact_arch}' instead."
             )
 
-    run_verifier(artifact, requested_arch, Path(args.dockerfile), interactive=args.interactive)
+    run_verifier(
+        artifact,
+        requested_arch,
+        Path(args.dockerfile),
+        interactive=args.interactive,
+        network=getattr(args, "docker_network", None) or DEFAULT_DOCKER_NETWORK,
+    )
     if args.interactive:
         print(f"interactive verifier ready for {artifact}")
         return 0

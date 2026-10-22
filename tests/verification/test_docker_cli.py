@@ -51,6 +51,8 @@ def test_verifier_build_command_uses_staged_context_and_relative_artifact_name(t
         "docker",
         "buildx",
         "build",
+        "--network",
+        "host",
         "--platform",
         "linux/amd64",
         "-f",
@@ -96,6 +98,8 @@ def test_verifier_run_command_launches_interactive_shell_for_arch():
         "docker",
         "run",
         "--rm",
+        "--network",
+        "host",
         "-it",
         "--init",
         "--security-opt",
@@ -151,6 +155,8 @@ def test_run_verifier_interactive_builds_then_runs_shell(tmp_path: Path, monkeyp
         "docker",
         "run",
         "--rm",
+        "--network",
+        "host",
         "-it",
         "--init",
         "--security-opt",
@@ -227,3 +233,41 @@ def test_verifier_run_command_sets_utf8_locale_for_interactive_shell():
     assert "TERM=xterm-256color" in command
     assert "RED_ENV_DISABLE_ZSH_256COLOR=1" in command
     assert "RED_ENV_VERIFY_INTERACTIVE=1" in command
+
+
+def test_run_verifier_defaults_to_host_networking(tmp_path: Path, monkeypatch):
+    artifact = tmp_path / "red_env_core_x86_64.tar.gz"
+    artifact.write_text("tarball", encoding="utf-8")
+    dockerfile = tmp_path / "verifier.Dockerfile"
+    dockerfile.write_text("FROM scratch\n", encoding="utf-8")
+
+    captured: list[list[str]] = []
+
+    def fake_run(command, check, capture_output=False):
+        captured.append(command)
+
+    monkeypatch.setattr("red_env.verification.docker.subprocess.run", fake_run)
+
+    run_verifier(artifact=artifact, arch="x86_64", dockerfile=dockerfile, interactive=True)
+
+    assert captured[0][3:5] == ["--network", "host"]
+    assert captured[1][3:5] == ["--network", "host"]
+
+
+def test_run_verifier_honours_a_custom_network(tmp_path: Path, monkeypatch):
+    artifact = tmp_path / "red_env_core_x86_64.tar.gz"
+    artifact.write_text("tarball", encoding="utf-8")
+    dockerfile = tmp_path / "verifier.Dockerfile"
+    dockerfile.write_text("FROM scratch\n", encoding="utf-8")
+
+    captured: list[list[str]] = []
+
+    def fake_run(command, check, capture_output=False):
+        captured.append(command)
+
+    monkeypatch.setattr("red_env.verification.docker.subprocess.run", fake_run)
+
+    run_verifier(artifact=artifact, arch="x86_64", dockerfile=dockerfile, interactive=True, network="bridge")
+
+    assert captured[0][3:5] == ["--network", "bridge"]
+    assert captured[1][3:5] == ["--network", "bridge"]

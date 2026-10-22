@@ -13,6 +13,11 @@ def _platform_for_arch(arch: str) -> str:
     return {"x86_64": "linux/amd64", "arm64": "linux/arm64"}[arch]
 
 
+# Verification containers only need outbound access while installing packages.
+# Host networking keeps them usable where the daemon cannot create veth pairs.
+DEFAULT_DOCKER_NETWORK = "host"
+
+
 def _get_host_arch() -> str:
     machine = platform.machine().lower()
     if machine in ("x86_64", "amd64"):
@@ -54,11 +59,14 @@ def verifier_build_command(
     package_file: str,
     context_dir: Path,
     image_tag: str | None = None,
+    network: str = DEFAULT_DOCKER_NETWORK,
 ) -> list[str]:
     command = [
         "docker",
         "buildx",
         "build",
+        "--network",
+        network,
         "--platform",
         _platform_for_arch(arch),
         "-f",
@@ -77,11 +85,13 @@ def verifier_image_tag(arch: str) -> str:
     return f"red-env-verify:{arch}-{uuid.uuid4().hex[:12]}"
 
 
-def verifier_run_command(*, arch: str, image_tag: str) -> list[str]:
+def verifier_run_command(*, arch: str, image_tag: str, network: str = DEFAULT_DOCKER_NETWORK) -> list[str]:
     return [
         "docker",
         "run",
         "--rm",
+        "--network",
+        network,
         "-it",
         "--init",
         "--security-opt",
@@ -110,7 +120,13 @@ def verifier_run_command(*, arch: str, image_tag: str) -> list[str]:
     ]
 
 
-def run_verifier(artifact: Path, arch: str, dockerfile: Path, interactive: bool = False) -> None:
+def run_verifier(
+    artifact: Path,
+    arch: str,
+    dockerfile: Path,
+    interactive: bool = False,
+    network: str = DEFAULT_DOCKER_NETWORK,
+) -> None:
     with tempfile.TemporaryDirectory(prefix="red-env-verify-") as temp_dir:
         staged = prepare_verifier_context(artifact, dockerfile, Path(temp_dir))
         image_tag = verifier_image_tag(arch)
@@ -122,6 +138,7 @@ def run_verifier(artifact: Path, arch: str, dockerfile: Path, interactive: bool 
                     package_file=staged.artifact_name,
                     context_dir=staged.context_dir,
                     image_tag=image_tag,
+                    network=network,
                 ),
                 check=True,
                 capture_output=True,
@@ -137,6 +154,6 @@ def run_verifier(artifact: Path, arch: str, dockerfile: Path, interactive: bool 
             raise
         if interactive:
             subprocess.run(
-                verifier_run_command(arch=arch, image_tag=image_tag),
+                verifier_run_command(arch=arch, image_tag=image_tag, network=network),
                 check=False,
             )
