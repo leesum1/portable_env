@@ -1,6 +1,6 @@
 id = "zoxide"
 description = "smarter cd command with learned history"
-profiles = ["extended"]
+profiles = ["core"]
 architectures = ["x86_64", "arm64"]
 
 [source]

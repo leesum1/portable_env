@@ -102,13 +102,36 @@ def test_build_command_stages_tools_configs_installer_and_metadata(tmp_path: Pat
         )
         assert manifest_payload["profile"] == "core"
         assert manifest_payload["arch"] == "x86_64"
-        assert manifest_payload["packages"] == ["bat", "delta", "fd", "fzf", "rg", "zsh", "zsh-bin-install-script"]
+        assert manifest_payload["packages"] == [
+            "bat",
+            "delta",
+            "dust",
+            "fd",
+            "fish",
+            "font-jetbrains-maple-mono",
+            "fzf",
+            "navi",
+            "ouch",
+            "rg",
+            "ruff",
+            "zellij",
+            "zoxide",
+            "zsh",
+            "zsh-bin-install-script",
+        ]
         assert manifest_payload["installed_files"] == [
             "bin/bat",
             "bin/delta",
+            "bin/dust",
             "bin/fd",
+            "bin/fish",
             "bin/fzf",
+            "bin/navi",
+            "bin/ouch",
             "bin/rg",
+            "bin/ruff",
+            "bin/zellij",
+            "bin/zoxide",
         ]
 
 

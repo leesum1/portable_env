@@ -1,6 +1,6 @@
 id = "ouch"
 description = "archive helper"
-profiles = ["extended"]
+profiles = ["core"]
 architectures = ["x86_64", "arm64"]
 
 [source]

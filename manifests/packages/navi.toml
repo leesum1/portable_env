@@ -1,6 +1,6 @@
 id = "navi"
 description = "interactive cheatsheet tool"
-profiles = ["extended"]
+profiles = ["core"]
 architectures = ["x86_64", "arm64"]
 
 [source]

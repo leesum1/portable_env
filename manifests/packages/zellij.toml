@@ -1,6 +1,6 @@
 id = "zellij"
 description = "terminal workspace"
-profiles = ["extended"]
+profiles = ["core"]
 architectures = ["x86_64", "arm64"]
 
 [source]

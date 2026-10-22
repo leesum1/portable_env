@@ -1,6 +1,6 @@
 id = "fish"
 description = "friendly interactive shell"
-profiles = ["extended"]
+profiles = ["core"]
 architectures = ["x86_64", "arm64"]
 
 [source]

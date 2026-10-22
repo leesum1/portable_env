@@ -1,6 +1,6 @@
 id = "ruff"
 description = "extremely fast Python linter and formatter"
-profiles = ["extended"]
+profiles = ["core"]
 architectures = ["x86_64", "arm64"]
 
 [source]

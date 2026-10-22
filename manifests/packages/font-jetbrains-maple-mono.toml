@@ -1,6 +1,6 @@
 id = "font-jetbrains-maple-mono"
 description = "JetBrains Maple Mono Regular font for terminal"
-profiles = ["extended"]
+profiles = ["core"]
 architectures = ["x86_64", "arm64"]
 
 [source]

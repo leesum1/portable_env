@@ -1,28 +1,36 @@
 [profiles.core]
-packages = ["fzf", "bat", "rg", "fd", "delta", "zsh", "zsh-bin-install-script"]
+packages = [
+  "fzf",
+  "bat",
+  "rg",
+  "fd",
+  "delta",
+  "zsh",
+  "zsh-bin-install-script",
+  "zellij",
+  "zoxide",
+  "fish",
+  "font-jetbrains-maple-mono",
+  "ruff",
+  "navi",
+  "dust",
+  "ouch",
+]
 
 [profiles.extended]
 extends = ["core"]
 packages = [
-  "dust",
   "duf",
   "eza",
   "fastfetch",
-  "fish",
-  "font-jetbrains-maple-mono",
   "forceterm",
   "glow",
   "jq",
   "lazygit",
-  "navi",
-  "ouch",
-  "ruff",
   "upx",
   "uv",
   "yazi",
   "yq",
-  "zellij",
-  "zoxide",
   "oh-my-zsh",
   "oh-my-zsh-z",
   "oh-my-zsh-zsh-autosuggestions",
