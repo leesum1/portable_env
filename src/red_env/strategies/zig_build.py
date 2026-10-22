@@ -37,6 +37,15 @@ def apply_zig_build(package: PackageSpec, downloaded_asset: Path, bundle_root: P
         else:
             source_root = extract_dir
 
+        # Some upstreams pin a toolchain via rust-toolchain.toml. rustup then
+        # switches to that channel, which usually lacks the musl target this
+        # build needs and fails with "can't find crate for `core`". Drop the
+        # pin so the environment toolchain (with musl targets installed) wins.
+        for marker in ("rust-toolchain.toml", "rust-toolchain"):
+            pinned = source_root / marker
+            if pinned.is_file():
+                pinned.unlink()
+
         args_list = package.strategy.extract.get("build_args", [])
         if isinstance(args_list, list):
             extra_args = [str(a) for a in args_list]

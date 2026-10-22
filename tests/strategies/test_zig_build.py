@@ -82,3 +82,36 @@ def test_apply_zig_build_sets_cache_dir(tmp_path: Path, monkeypatch):
     assert "CARGO_ZIGBUILD_CACHE_DIR" in captured_env
     assert len(result) == 1
     assert result[0].exists()
+
+def test_apply_zig_build_drops_pinned_toolchain_file(tmp_path: Path, monkeypatch):
+    """Upstreams pinning rust-toolchain.toml would otherwise make rustup pick a
+    channel that lacks the musl target, failing with "can't find crate for core"."""
+    archive_path = tmp_path / "navi.tar.gz"
+    with tarfile.open(archive_path, "w:gz") as archive:
+        for name, payload in (
+            ("navi-2.23.0/Cargo.toml", b"fake-cargo-package\n"),
+            ("navi-2.23.0/rust-toolchain.toml", b'[toolchain]\nchannel = "1.81.0"\n'),
+        ):
+            info = tarfile.TarInfo(name)
+            info.size = len(payload)
+            info.mode = 0o644
+            archive.addfile(info, io.BytesIO(payload))
+
+    bundle_root = tmp_path / "bundle"
+    bundle_root.mkdir()
+
+    seen_pinned_file: list[bool] = []
+
+    def fake_run(*args, **kwargs):
+        cwd = Path(kwargs["cwd"])
+        seen_pinned_file.append((cwd / "rust-toolchain.toml").exists())
+        target_dir = cwd / "target" / "x86_64-unknown-linux-musl" / "release"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        (target_dir / "bat").write_bytes(b"fake binary")
+
+    monkeypatch.setattr("red_env.strategies.zig_build.subprocess.run", fake_run)
+
+    result = apply_zig_build(_make_package(), archive_path, bundle_root, "x86_64")
+
+    assert seen_pinned_file == [False]
+    assert result[0].exists()
