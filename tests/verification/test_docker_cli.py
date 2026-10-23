@@ -271,3 +271,30 @@ def test_run_verifier_honours_a_custom_network(tmp_path: Path, monkeypatch):
 
     assert captured[0][3:5] == ["--network", "bridge"]
     assert captured[1][3:5] == ["--network", "bridge"]
+
+def test_run_verifier_surfaces_the_build_output_when_docker_fails(tmp_path: Path, monkeypatch):
+    import subprocess
+
+    import pytest
+
+    artifact = tmp_path / "red_env_core_x86_64.tar.gz"
+    artifact.write_text("tarball", encoding="utf-8")
+    dockerfile = tmp_path / "verifier.Dockerfile"
+    dockerfile.write_text("FROM scratch\n", encoding="utf-8")
+
+    def fake_run(command, check, capture_output=False):
+        raise subprocess.CalledProcessError(
+            returncode=125,
+            cmd=command,
+            stderr=b"docker: unknown command: docker buildx",
+        )
+
+    monkeypatch.setattr("red_env.verification.docker.subprocess.run", fake_run)
+
+    with pytest.raises(RuntimeError) as excinfo:
+        run_verifier(artifact=artifact, arch="x86_64", dockerfile=dockerfile)
+
+    message = str(excinfo.value)
+    assert "exit 125" in message
+    assert "docker: unknown command: docker buildx" in message
+    assert "docker buildx build" in message

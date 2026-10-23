@@ -144,14 +144,19 @@ def run_verifier(
                 capture_output=True,
             )
         except subprocess.CalledProcessError as e:
+            stderr = (e.stderr or b"").decode("utf-8", errors="ignore")
             # Check if it's a cross-architecture emulation issue
             host_arch = _get_host_arch()
-            if host_arch != arch and "exec format error" in (e.stderr or b"").decode("utf-8", errors="ignore").lower():
+            if host_arch != arch and "exec format error" in stderr.lower():
                 raise RuntimeError(
                     f"Cannot run {arch} container on {host_arch} host without QEMU emulation.\n"
                     f"Run: docker run --rm --privileged multiarch/qemu-user-static --reset -p yes"
                 ) from e
-            raise
+            raise RuntimeError(
+                f"docker buildx failed for {artifact.name} (exit {e.returncode}).\n"
+                f"Command: {' '.join(str(part) for part in e.cmd)}\n"
+                f"Output:\n{stderr.strip() or '<no stderr>'}"
+            ) from e
         if interactive:
             subprocess.run(
                 verifier_run_command(arch=arch, image_tag=image_tag, network=network),
