@@ -1,6 +1,6 @@
 id = "oh-my-zsh"
 description = "oh-my-zsh framework for offline installation"
-profiles = ["extended"]
+profiles = ["core"]
 architectures = ["x86_64", "arm64"]
 
 [source]

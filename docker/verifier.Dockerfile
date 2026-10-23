@@ -49,7 +49,14 @@ missing = [relative for relative in installed_files if not (install_root / relat
 assert not missing, f'missing installed files: {missing}'; \
 non_executable = [relative for relative in installed_files if (install_root / relative).is_file() and not os.access(install_root / relative, os.X_OK)]; \
 assert not non_executable, f'non-executable installed files: {non_executable}'" \
-    && if [ -x /root/.red_env/bin/zsh ] && [ -d /root/.red_env/cache/oh-my-zsh ]; then HOME=/root ZDOTDIR=/root/.red_env/configs/zsh /root/.red_env/bin/zsh -i -c 'test -f /root/.red_env/cache/oh-my-zsh/oh-my-zsh.sh'; fi
+    && if [ -x /root/.red_env/bin/zsh ]; then \
+         HOME=/root ZDOTDIR=/root/.red_env/configs/zsh /root/.red_env/bin/zsh -i -c '\
+           [[ -f "${ZSH}/oh-my-zsh.sh" ]] || { print -u2 "oh-my-zsh is missing from ${ZSH}"; exit 1 }; \
+           (( $+functions[_omz_source] )) || { print -u2 "oh-my-zsh did not load"; exit 1 }; \
+           (( $+functions[zshz] )) || { print -u2 "the z plugin did not load"; exit 1 }; \
+           (( $+functions[_zsh_autosuggest_start] )) || { print -u2 "zsh-autosuggestions did not load"; exit 1 }; \
+           (( $+functions[_zsh_highlight] )) || { print -u2 "zsh-syntax-highlighting did not load"; exit 1 }'; \
+       fi
 
 # Setup proper shell initialization for interactive use
 RUN mkdir -p /root/.red_env/configs/zsh

@@ -1,6 +1,6 @@
 id = "oh-my-zsh-zsh-syntax-highlighting"
 description = "zsh syntax highlighting plugin for oh-my-zsh"
-profiles = ["extended"]
+profiles = ["core"]
 architectures = ["x86_64", "arm64"]
 
 [source]

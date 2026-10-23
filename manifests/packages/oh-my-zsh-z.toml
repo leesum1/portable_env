@@ -1,6 +1,6 @@
 id = "oh-my-zsh-z"
 description = "z directory jumping plugin for oh-my-zsh"
-profiles = ["extended"]
+profiles = ["core"]
 architectures = ["x86_64", "arm64"]
 
 [source]
@@ -14,3 +14,6 @@ type = "archive_tree"
 [strategy.extract]
 target_dir = "cache/oh-my-zsh/custom/plugins/z"
 strip_components = 1
+# The upstream repo is named zsh-z but oh-my-zsh looks for <plugin>/<plugin>.plugin.zsh,
+# so expose the plugin entry point under the name the framework expects.
+links = { "z.plugin.zsh" = "zsh-z.plugin.zsh" }

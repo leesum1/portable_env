@@ -12,6 +12,25 @@ python -m red_env build --profile core --arch x86_64
 python -m red_env verify --artifact dist/red_env_core_x86_64.tar.gz --arch x86_64
 ```
 
+## Profile
+
+`core` 是大多数人需要的包：两个 shell（zsh、fish）、常用 CLI 工具，以及一套完整的 zsh 体验 —— `oh-my-zsh` 加上 `assets/configs/zsh/zshrc` 里启用的 `z`、`zsh-autosuggestions`、`zsh-syntax-highlighting` 三个插件。如果手工打的包里没有 oh-my-zsh，启动文件会打印警告，而不是静默地把主题和插件都丢掉。
+
+`extended` 在 `core` 之上追加可选项（eza、lazygit、yazi、glow、jq、uv 等）。
+
+### 用另一个名字暴露插件入口
+
+有些上游仓库的入口文件名和插件名不一致。`zsh-z` 提供的是 `zsh-z.plugin.zsh`，而 oh-my-zsh 只会 source `<插件名>/<插件名>.plugin.zsh`，所以 manifest 里声明一个符号链接：
+
+```toml
+[strategy.extract]
+target_dir = "cache/oh-my-zsh/custom/plugins/z"
+strip_components = 1
+links = { "z.plugin.zsh" = "zsh-z.plugin.zsh" }
+```
+
+`links` 由 `archive_tree` 策略支持；链接目标在解压结果里不存在时，构建会直接失败。
+
 ## GitHub 访问
 
 `red_env build` 会从 GitHub 拉取 release 资产。匿名请求每小时只有 60 次，跑不完一次完整构建，因此 token 按以下顺序解析：

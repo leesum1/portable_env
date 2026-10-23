@@ -14,6 +14,32 @@ def _strip_path(path: str, strip_components: int) -> Path | None:
     return Path(*parts[strip_components:])
 
 
+def _create_links(target_root: Path, links: object, package_id: str) -> list[Path]:
+    if not links:
+        return []
+    if not isinstance(links, dict):
+        raise ValueError(
+            f"archive_tree for {package_id} expects extract.links to be a table of "
+            f"link name to target, got {type(links).__name__}"
+        )
+
+    created: list[Path] = []
+    for link_name, target_name in links.items():
+        link_path = target_root / str(link_name)
+        target_path = target_root / str(target_name)
+        if not target_path.exists():
+            raise ValueError(
+                f"archive_tree for {package_id} cannot link {link_name} to {target_name}: "
+                f"{target_path} does not exist in the extracted tree"
+            )
+        if link_path.is_symlink() or link_path.exists():
+            link_path.unlink()
+        link_path.parent.mkdir(parents=True, exist_ok=True)
+        link_path.symlink_to(Path(target_name))
+        created.append(link_path)
+    return created
+
+
 def apply_archive_tree(
     package: PackageSpec,
     downloaded_asset: Path,
@@ -43,4 +69,5 @@ def apply_archive_tree(
             target_path.chmod(member.mode or 0o644)
             written.append(target_path)
 
+    written.extend(_create_links(target_root, package.strategy.extract.get("links"), package.id))
     return sorted(written)

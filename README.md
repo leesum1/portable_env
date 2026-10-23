@@ -12,6 +12,25 @@ python -m red_env build --profile core --arch x86_64
 python -m red_env verify --artifact dist/red_env_core_x86_64.tar.gz --arch x86_64
 ```
 
+## Profiles
+
+`core` is the bundle most users want: the shells (zsh and fish), the everyday CLI tools, and a complete zsh experience — `oh-my-zsh` plus the `z`, `zsh-autosuggestions` and `zsh-syntax-highlighting` plugins that `assets/configs/zsh/zshrc` enables. When a hand-built bundle lacks oh-my-zsh, the startup file prints a warning instead of silently dropping the theme and plugins.
+
+`extended` adds the optional extras (eza, lazygit, yazi, glow, jq, uv, …) on top of `core`.
+
+### Exposing a plugin under a different name
+
+Some upstream repositories do not name their entry point after the plugin. `zsh-z` ships `zsh-z.plugin.zsh`, but oh-my-zsh only sources `<plugin>/<plugin>.plugin.zsh`, so the manifest declares a symlink:
+
+```toml
+[strategy.extract]
+target_dir = "cache/oh-my-zsh/custom/plugins/z"
+strip_components = 1
+links = { "z.plugin.zsh" = "zsh-z.plugin.zsh" }
+```
+
+`links` is supported by the `archive_tree` strategy and the build fails when a link target does not exist in the extracted tree.
+
 ## GitHub Access
 
 `red_env build` fetches release assets from GitHub. Anonymous requests are limited to 60 per hour, which is not enough for a full build, so the token is resolved in this order:

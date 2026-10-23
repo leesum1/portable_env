@@ -23,14 +23,6 @@ fi
 export ZSH="${RED_ENV_HOME}/cache/oh-my-zsh"
 export ZSH_CACHE_DIR="${RED_ENV_HOME}/cache/oh-my-zsh/cache"
 
-# 离线环境下，从缓存初始化 oh-my-zsh
-if [[ ! -d "${ZSH}" ]]; then
-  if [[ -d "${RED_ENV_HOME}/bundle/cache/oh-my-zsh" ]]; then
-    mkdir -p "${RED_ENV_HOME}/cache"
-    cp -r "${RED_ENV_HOME}/bundle/cache/oh-my-zsh" "${ZSH}"
-  fi
-fi
-
 # 设置插件列表
 plugins=(
   # 内置插件
@@ -57,6 +49,10 @@ if [[ -f "${ZSH}/oh-my-zsh.sh" ]]; then
     export DISABLE_AUTO_UPDATE="true"
   fi
   source "${ZSH}/oh-my-zsh.sh"
+else
+  # 静默降级会让人以为插件"配了却不生效"，这里明确说明缺什么
+  print -u2 "[red_env] oh-my-zsh not found at ${ZSH}"
+  print -u2 "[red_env] zsh will run without the theme and plugins; rebuild the bundle with the oh-my-zsh packages (included in the core profile)."
 fi
 
 # -----------------------------------------------------------------------------

@@ -45,6 +45,16 @@ def test_build_command_stages_tools_configs_installer_and_metadata(tmp_path: Pat
 
     def fake_download(package, arch, destination, manifest_root=None):
         destination.parent.mkdir(parents=True, exist_ok=True)
+        if package.strategy.type == "archive_tree":
+            module_name = package.strategy.extract["target_dir"].split("/")[-1]
+            entry = "zsh-z.plugin.zsh" if package.id == "oh-my-zsh-z" else f"{module_name}.plugin.zsh"
+            with tarfile.open(destination, "w:gz") as archive:
+                payload = b"# plugin\n"
+                info = tarfile.TarInfo(f"{package.id}-master/{entry}")
+                info.size = len(payload)
+                info.mode = 0o644
+                archive.addfile(info, io.BytesIO(payload))
+            return destination
         with tarfile.open(destination, "w:gz") as archive:
             files = {package.id: f"#!/bin/sh\necho {package.id}-{arch}\n".encode("utf-8")}
             if package.id == "zsh":
@@ -97,6 +107,14 @@ def test_build_command_stages_tools_configs_installer_and_metadata(tmp_path: Pat
         assert "red_env_offline/configs/zsh/.zshrc" in members
         assert "red_env_offline/installer/install.sh" in members
         assert "red_env_offline/bundle/bundle-manifest.json" in members
+        assert "red_env_offline/bundle/cache/oh-my-zsh/custom/plugins/zsh-autosuggestions/zsh-autosuggestions.plugin.zsh" in members
+        assert "red_env_offline/bundle/cache/oh-my-zsh/custom/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.plugin.zsh" in members
+
+        # oh-my-zsh loads custom plugins as <plugin>/<plugin>.plugin.zsh, but upstream
+        # zsh-z ships zsh-z.plugin.zsh, so the bundle must expose the expected name.
+        z_plugin = archive.getmember("red_env_offline/bundle/cache/oh-my-zsh/custom/plugins/z/z.plugin.zsh")
+        assert z_plugin.issym()
+        assert z_plugin.linkname == "zsh-z.plugin.zsh"
 
         manifest_payload = json.loads(
             archive.extractfile("red_env_offline/bundle/bundle-manifest.json").read().decode("utf-8")
@@ -112,6 +130,10 @@ def test_build_command_stages_tools_configs_installer_and_metadata(tmp_path: Pat
             "font-jetbrains-maple-mono",
             "fzf",
             "navi",
+            "oh-my-zsh",
+            "oh-my-zsh-z",
+            "oh-my-zsh-zsh-autosuggestions",
+            "oh-my-zsh-zsh-syntax-highlighting",
             "ouch",
             "rg",
             "ruff",
@@ -178,7 +200,8 @@ def test_build_command_extended_profile_stages_offline_oh_my_zsh_runtime(tmp_pat
                     files = {"install": b"#!/bin/sh\necho install\n"}
                 else:
                     module_name = package.strategy.extract["target_dir"].split("/")[-1]
-                    files = {f"{package.id}-master/{module_name}.plugin.zsh": b"# plugin\n"}
+                    entry = "zsh-z.plugin.zsh" if package.id == "oh-my-zsh-z" else f"{module_name}.plugin.zsh"
+                    files = {f"{package.id}-master/{entry}": b"# plugin\n"}
                 for name, payload in files.items():
                     info = tarfile.TarInfo(name)
                     info.size = len(payload)
@@ -279,6 +302,16 @@ def _recording_strategies(seen: list):
 
 def _generic_download(package, arch, destination, manifest_root=None):
     destination.parent.mkdir(parents=True, exist_ok=True)
+    if package.strategy.type == "archive_tree":
+        module_name = package.strategy.extract["target_dir"].split("/")[-1]
+        entry = "zsh-z.plugin.zsh" if package.id == "oh-my-zsh-z" else f"{module_name}.plugin.zsh"
+        with tarfile.open(destination, "w:gz") as archive:
+            payload = b"# plugin\n"
+            info = tarfile.TarInfo(f"{package.id}-master/{entry}")
+            info.size = len(payload)
+            info.mode = 0o644
+            archive.addfile(info, io.BytesIO(payload))
+        return destination
     with tarfile.open(destination, "w:gz") as archive:
         files = {package.id: f"#!/bin/sh\necho {package.id}-{arch}\n".encode("utf-8")}
         if package.id == "zsh":

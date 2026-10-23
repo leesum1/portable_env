@@ -15,6 +15,10 @@ packages = [
   "navi",
   "dust",
   "ouch",
+  "oh-my-zsh",
+  "oh-my-zsh-z",
+  "oh-my-zsh-zsh-autosuggestions",
+  "oh-my-zsh-zsh-syntax-highlighting",
 ]
 
 [profiles.extended]
@@ -31,10 +35,6 @@ packages = [
   "uv",
   "yazi",
   "yq",
-  "oh-my-zsh",
-  "oh-my-zsh-z",
-  "oh-my-zsh-zsh-autosuggestions",
-  "oh-my-zsh-zsh-syntax-highlighting",
 ]
 
 [profiles.experimental]
